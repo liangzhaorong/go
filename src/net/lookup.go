@@ -111,6 +111,8 @@ func ipVersion(network string) byte {
 
 // DefaultResolver is the resolver used by the package-level Lookup
 // functions and by Dialers without a specified Resolver.
+//
+//
 var DefaultResolver = &Resolver{}
 
 // A Resolver looks up names and numbers.

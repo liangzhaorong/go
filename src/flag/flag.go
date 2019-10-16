@@ -753,6 +753,8 @@ func (f *FlagSet) StringVar(p *string, name string, value string, usage string) 
 
 // StringVar defines a string flag with specified name, default value, and usage string.
 // The argument p points to a string variable in which to store the value of the flag.
+// StringVar 使用指定的 name，默认值 value，以及 usage 用法字符串定义一个字符串标志。
+// 参数 p 指向一个字符串变量，用于在其中存储标志的值。
 func StringVar(p *string, name string, value string, usage string) {
 	CommandLine.Var(newStringValue(value, p), name, usage)
 }

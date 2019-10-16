@@ -2491,13 +2491,22 @@ func ServeTLS(l net.Listener, handler Handler, certFile, keyFile string) error {
 
 // A Server defines parameters for running an HTTP server.
 // The zero value for Server is a valid configuration.
+//
+// Server 定义用于运行中的 HTTP 服务器的参数。
+// 零值 Server 也是有效配置。
 type Server struct {
 	// Addr optionally specifies the TCP address for the server to listen on,
 	// in the form "host:port". If empty, ":http" (port 80) is used.
 	// The service names are defined in RFC 6335 and assigned by IANA.
 	// See net.Dial for details of the address format.
+	//
+	// Addr 可以选择以 "host:port" 的形式指定服务器要侦听的 TCP 地址。如果为空，
+	// 则使用 ":http"（端口 80）。
+	// 服务名称在 RFC 6335 中定义，并由 IANA 分配。
+	// 有关地址格式的详细信息，请参见 net.Dial。
 	Addr string
 
+	// 调用的 Handler，如果为 nil，则为 http.DefaultServeMux
 	Handler Handler // handler to invoke, http.DefaultServeMux if nil
 
 	// TLSConfig optionally provides a TLS configuration for use
@@ -2507,6 +2516,11 @@ type Server struct {
 	// tls.Config.SetSessionTicketKeys. To use
 	// SetSessionTicketKeys, use Server.Serve with a TLS Listener
 	// instead.
+	//
+	// TLSConfig 可选地提供 TLS 配置，以供 ServeTLS 和 ListenAndServeTLS 使用。
+	// 请注意，此值由 ServeTLS 和 ListenAndServeTLS 克隆，因此无法使用
+	// tls.Config.SetSessionTicketKeys 之类的方法修改配置。若要使用 SetSessionTicketKeys，
+	// 请改为将 Server.Serve 与 TLS Listener 一起使用。
 	TLSConfig *tls.Config
 
 	// ReadTimeout is the maximum duration for reading the entire

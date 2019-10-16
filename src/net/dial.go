@@ -619,6 +619,10 @@ type ListenConfig struct {
 //
 // See func Listen for a description of the network and address
 // parameters.
+//
+// Listen 在本地网络地址上通告（announces）。
+//
+// 有关 network 和 address 参数的详细说明，请参见 Listen 函数。
 func (lc *ListenConfig) Listen(ctx context.Context, network, address string) (Listener, error) {
 	addrs, err := DefaultResolver.resolveAddrList(ctx, "listen", network, address, nil)
 	if err != nil {
@@ -701,6 +705,19 @@ type sysListener struct {
 //
 // See func Dial for a description of the network and address
 // parameters.
+//
+// Listen 在本地网络上通告（announces）。
+//
+// 参数 network 必须为 "tcp", "tcp4", "tcp6", "unix" 或 "unixpacket".
+//
+// 对于 TCP 网络，如果 address 参数中的 host 为空或者是一个字面量（literal）
+// 未指定的 IP 地址，则 Listen 侦听本地系统中所有可用的单播（unicast）或 anycast IP 地址。
+// 要仅使用 IPv4，则指定 network 为 "tcp4"。
+// address 可以使用 host 名，但不推荐这么做，因为它会为 host 的 IP 最多创建一个 listener。
+// 如果 address 中的 port 为空或为 "0"，如 "127.0.0.1:" 或 "[::1]:0"，则会自动选择端口号。
+// Listener 的 Addr 方法可用于发现所选的端口。
+//
+// 有关 network 和 address 参数的详细说明，请参见 Dial 函数。
 func Listen(network, address string) (Listener, error) {
 	var lc ListenConfig
 	return lc.Listen(context.Background(), network, address)

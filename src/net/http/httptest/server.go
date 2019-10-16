@@ -23,6 +23,8 @@ import (
 
 // A Server is an HTTP server listening on a system-chosen port on the
 // local loopback interface, for use in end-to-end HTTP tests.
+//
+// Server 是侦听本地环回接口上系统选择的端口的 HTTP 服务器，用于端到端 HTTP 测试。
 type Server struct {
 	URL      string // base URL of form http://ipaddr:port with no trailing slash
 	Listener net.Listener
@@ -30,25 +32,37 @@ type Server struct {
 	// TLS is the optional TLS configuration, populated with a new config
 	// after TLS is started. If set on an unstarted server before StartTLS
 	// is called, existing fields are copied into the new config.
+	//
+	// TLS 是可选的 TLS 配置，在 TLS 启动后会填充新的配置。如果在调用 StartTLS 前
+	//在未启动的 server 上设置，则会将现有字段赋值到新配置中。
 	TLS *tls.Config
 
 	// Config may be changed after calling NewUnstartedServer and
 	// before Start or StartTLS.
+	//
+	// 在调用 NewUnstartedServer 之后，调用 Start 或 StartTLS 之前，可以更改 Config.
 	Config *http.Server
 
 	// certificate is a parsed version of the TLS config certificate, if present.
+	//
+	// certificate 是 TLS 配置证书的已解析版本（如果存在的话）
 	certificate *x509.Certificate
 
 	// wg counts the number of outstanding HTTP requests on this server.
 	// Close blocks until all requests are finished.
+	//
+	// wg 计数该 server 上未完成的 HTTP 请求的数量。关闭块，直到所有的请求完成。
 	wg sync.WaitGroup
 
-	mu     sync.Mutex // guards closed and conns
+	mu     sync.Mutex // guards closed and conns（用于保护 closed 和 conns）
 	closed bool
-	conns  map[net.Conn]http.ConnState // except terminal states
+	conns  map[net.Conn]http.ConnState // except terminal states（终端状态除外）
 
 	// client is configured for use with the server.
 	// Its transport is automatically closed when Close is called.
+	//
+	// 与服务器一起使用的 client 配置。
+	// 当调用 Close
 	client *http.Client
 }
 
@@ -76,6 +90,12 @@ func newLocalListener() net.Listener {
 // We only register this flag if it looks like the caller knows about it
 // and is trying to use it as we don't want to pollute flags and this
 // isn't really part of our API. Don't depend on this.
+//
+// 当调试基于 HTTP 服务器的特定测试时，该标志可以让你运行
+//   go test -run=BrokenTest -httptest.serve=127.0.0.1:8000
+// 来启动 broken 服务器时可以让你手动与其进行交互。
+// 仅在调用者知道它并在尝试使用它的时候才注册该标志，因为我们不想污染（pollute）标志，
+// 并且这实际上不是我们 API 的一部分。不要依赖这个。
 var serveFlag string
 
 func init() {
@@ -95,6 +115,9 @@ func strSliceContainsPrefix(v []string, pre string) bool {
 
 // NewServer starts and returns a new Server.
 // The caller should call Close when finished, to shut it down.
+//
+// NewServer 启动并返回一个新 Server。
+// 完成后，调用者应调用 Close 已将其关闭。
 func NewServer(handler http.Handler) *Server {
 	ts := NewUnstartedServer(handler)
 	ts.Start()
@@ -107,6 +130,12 @@ func NewServer(handler http.Handler) *Server {
 // StartTLS.
 //
 // The caller should call Close when finished, to shut it down.
+//
+// NewUnstartedServer 返回一个新 Server 但不启动它。
+//
+// 在更改它的配置后，调用者应调用 Start 或 StartTLS.
+//
+// 完成后，调用者应调用 Close 已将其关闭。
 func NewUnstartedServer(handler http.Handler) *Server {
 	return &Server{
 		Listener: newLocalListener(),
