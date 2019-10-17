@@ -166,6 +166,7 @@ func (d *Dialer) fallbackDelay() time.Duration {
 }
 
 func parseNetwork(ctx context.Context, network string, needsProto bool) (afnet string, proto int, err error) {
+	// 返回 ':' 在 network 中最右边出现的索引
 	i := last(network, ':')
 	if i < 0 { // no colon
 		switch network {
@@ -200,6 +201,8 @@ func parseNetwork(ctx context.Context, network string, needsProto bool) (afnet s
 // resolveAddrList resolves addr using hint and returns a list of
 // addresses. The result contains at least one address when error is
 // nil.
+//
+// resolveAddrList 使用提示解析 addr 并返回地址列表。 error 为 nil 时，结果至少包含一个地址。
 func (r *Resolver) resolveAddrList(ctx context.Context, op, network, addr string, hint Addr) (addrList, error) {
 	afnet, _, err := parseNetwork(ctx, network, true)
 	if err != nil {

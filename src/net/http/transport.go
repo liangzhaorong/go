@@ -6,6 +6,8 @@
 //
 // This is the low-level Transport implementation of RoundTripper.
 // The high-level interface is in client.go.
+// 这是 RoundTripper 的底层 Transport 实现。
+// 上层接口在 client.go 中
 
 package http
 
@@ -39,6 +41,10 @@ import (
 // and caches them for reuse by subsequent calls. It uses HTTP proxies
 // as directed by the $HTTP_PROXY and $NO_PROXY (or $http_proxy and
 // $no_proxy) environment variables.
+//
+// DefaultTransport 是 Transport 的默认实现，由 DefaultClient 使用。
+// 它根据需要建立网络连接，并缓存它们以供后续调用重用。它按照 $HTTP_PROXY 和
+// $NO_PROXY（或 $http_proxy 和 $no_proxy）环境变量的指示使用 HTTP 代理。
 var DefaultTransport RoundTripper = &Transport{
 	Proxy: ProxyFromEnvironment,
 	DialContext: (&net.Dialer{
@@ -59,6 +65,9 @@ const DefaultMaxIdleConnsPerHost = 2
 
 // Transport is an implementation of RoundTripper that supports HTTP,
 // HTTPS, and HTTP proxies (for either HTTP or HTTPS with CONNECT).
+//
+// Transport 是 RoundTripper 的实现，它支持 HTTP，HTTPS，以及 HTTP 代理
+//（对于带 CONNECT 的 HTTP 或 HTTPS）.
 //
 // By default, Transport caches connections for future re-use.
 // This may leave many open connections when accessing many hosts.

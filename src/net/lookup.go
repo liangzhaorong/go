@@ -112,12 +112,15 @@ func ipVersion(network string) byte {
 // DefaultResolver is the resolver used by the package-level Lookup
 // functions and by Dialers without a specified Resolver.
 //
-//
+// DefaultResolver 是包级别的 Lookup 函数和没有指定 Resolver 的 Dialers 函数使用的解析器。
 var DefaultResolver = &Resolver{}
 
 // A Resolver looks up names and numbers.
 //
 // A nil *Resolver is equivalent to a zero Resolver.
+//
+// Resolver 查找名称和端口号。
+// 一个 nil *Resolver 等价于零值的 Resolver.
 type Resolver struct {
 	// PreferGo controls whether Go's built-in DNS resolver is preferred
 	// on platforms where it's available. It is equivalent to setting

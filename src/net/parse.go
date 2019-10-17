@@ -224,6 +224,7 @@ func count(s string, b byte) int {
 }
 
 // Index of rightmost occurrence of b in s.
+// b 在 s 中最右边出现的索引。
 func last(s string, b byte) int {
 	i := len(s)
 	for i--; i >= 0; i-- {
