@@ -28,17 +28,22 @@ import (
 
 // A Client is an HTTP client. Its zero value (DefaultClient) is a
 // usable client that uses DefaultTransport.
+// Client 是 HTTP 客户端。它的零值（DefaultClient）是使用 DefaultTransport 的可用客户端。
 //
 // The Client's Transport typically has internal state (cached TCP
 // connections), so Clients should be reused instead of created as
 // needed. Clients are safe for concurrent use by multiple goroutines.
+// Client 的 Transport 通常具有内部状态（缓存的 TCP 连接），因此应复用 Client，而不是
+// 根据需要创建 Client。 Client 可以安全地被多个 goroutine 并发使用。
 //
 // A Client is higher-level than a RoundTripper (such as Transport)
 // and additionally handles HTTP details such as cookies and
 // redirects.
+// Client 比 RoundTripper（例如 Transport）更高级别，并且还处理 HTTP 详细信息，例如 cookie 和重定向。
 //
 // When following redirects, the Client will forward all headers set on the
 // initial Request except:
+// 跟随重定向时，Client 将转发在初始请求上设置的所有头部，但以下情况除外：
 //
 // • when forwarding sensitive headers like "Authorization",
 // "WWW-Authenticate", and "Cookie" to untrusted targets.
@@ -46,6 +51,9 @@ import (
 // that is not a subdomain match or exact match of the initial domain.
 // For example, a redirect from "foo.com" to either "foo.com" or "sub.foo.com"
 // will forward the sensitive headers, but a redirect to "bar.com" will not.
+// • 当将敏感的头部（如  "Authorization" ， "WWW-Authenticate"  和  "Cookie" ）转发到不受信任
+//   的目标时。比如当重定向到与子域名不匹配或与原始域名不完全匹配的域名时，将忽略这些头部。 例如，
+//   从 "foo.com" 重定向到 "foo.com" 或 "sub.foo.com" 将转发敏感头部，但重定向到 "bar.com" 则不会。
 //
 // • when forwarding the "Cookie" header with a non-nil cookie Jar.
 // Since each redirect may mutate the state of the cookie jar,
@@ -54,17 +62,21 @@ import (
 // with the expectation that the Jar will insert those mutated cookies
 // with the updated values (assuming the origin matches).
 // If Jar is nil, the initial cookies are forwarded without change.
-//
+// • 当使用非零值 Cookie Jar 转发 "Cookie" 头部时。由于每个重定向可能会更改 Cookie Jar 的状态，
+//   因此重定向可能会更改初始请求中设置的 Cookie。 当转发 "Cookie" 头部时，任何突变（mutated）
+//   的 cookie 都将被省略，并期望 Jar 将插入具有更新值的那些突变的 cookie（假设源站匹配）。
+//   如果 Jar 为nil，则将转发原始 cookie，而不进行任何更改。
 type Client struct {
 	// Transport specifies the mechanism by which individual
 	// HTTP requests are made.
 	// If nil, DefaultTransport is used.
+	// Transport 指定发出单个 HTTP 请求的机制。如果为 nil，则使用 DefaultTransport
 	Transport RoundTripper
 
 	// CheckRedirect specifies the policy for handling redirects.
 	// If CheckRedirect is not nil, the client calls it before
 	// following an HTTP redirect. The arguments req and via are
-	// the upcoming request and the requests made already, oldest
+	// the upcoming request and the requests made already,
 	// first. If CheckRedirect returns an error, the Client's Get
 	// method returns both the previous Response (with its Body
 	// closed) and CheckRedirect's error (wrapped in a url.Error)
@@ -72,20 +84,30 @@ type Client struct {
 	// As a special case, if CheckRedirect returns ErrUseLastResponse,
 	// then the most recent response is returned with its body
 	// unclosed, along with a nil error.
+	// CheckRedirect 指定用于处理重定向的策略。如果 CheckRedirect 不为 nil，
+	// 则客户端将在遵循 HTTP 重定向之前调用它。参数 req 和 via 是即将到来的
+	// 请求和已发出的请求，oldest first。如果 CheckRedirect 返回错误，则客户端
+	// 的 Get 方法将返回先前的 Response（关闭其 Body）和 CheckRedirect 的错误
+	// （包装在 url.Error 中），而不是发出 Request 请求。
 	//
 	// If CheckRedirect is nil, the Client uses its default policy,
 	// which is to stop after 10 consecutive requests.
+	// 如果 CheckRedirect 为 nil，则客户端使用其默认策略，该策略将在连续 10 个请求后停止。
 	CheckRedirect func(req *Request, via []*Request) error
 
 	// Jar specifies the cookie jar.
+	// Jar 指定 cookie jar。
 	//
 	// The Jar is used to insert relevant cookies into every
 	// outbound Request and is updated with the cookie values
 	// of every inbound Response. The Jar is consulted for every
 	// redirect that the Client follows.
+	// Jar 用于将相关 cookie 插入每个 outbound Request，并使用每个 inbound Response
+	// 的 cookie 值进行更新。客户端遵循的每个重定向都会咨询 Jar。
 	//
 	// If Jar is nil, cookies are only sent if they are explicitly
 	// set on the Request.
+	// 如果 Jar 为 nil，则仅当在 Request 上显式设置 cookie 时，才发送 cookie。
 	Jar CookieJar
 
 	// Timeout specifies a time limit for requests made by this
@@ -93,30 +115,43 @@ type Client struct {
 	// redirects, and reading the response body. The timer remains
 	// running after Get, Head, Post, or Do return and will
 	// interrupt reading of the Response.Body.
+	// Timeout 为该客户端发出的请求指定了时间限制。该 timeout 包含连接
+	// 时间，任意重定向，以及读取响应正文。在 Get，Head，Post 或 Do 返回
+	// 之后，timer 保持运行，并且将中断 Response.Body 的读取。
 	//
 	// A Timeout of zero means no timeout.
+	// Timeout 为 0 意味着没有超时。
 	//
 	// The Client cancels requests to the underlying Transport
 	// as if the Request's Context ended.
+	// Client 取消对底层 Transport 的请求，就如 Request 的 Context
+	// 结束一样。
 	//
 	// For compatibility, the Client will also use the deprecated
 	// CancelRequest method on Transport if found. New
 	// RoundTripper implementations should use the Request's Context
 	// for cancellation instead of implementing CancelRequest.
+	// 为了兼容性，如果找到，Client 还将在 Transport 上使用不推荐使用的
+	// CancelRequest 方法。新的 RoundTripper 实现应该使用请求的上下文
+	// 进行取消而不是实现 CancelRequest 方法。
 	Timeout time.Duration
 }
 
 // DefaultClient is the default Client and is used by Get, Head, and Post.
+// DefaultClient 是默认客户端，由 Get，Head 和 Post 使用。
 var DefaultClient = &Client{}
 
 // RoundTripper is an interface representing the ability to execute a
 // single HTTP transaction, obtaining the Response for a given Request.
+// RoundTripper 是表示执行单个 HTTP 事务，获取给定请求的响应的能力的接口。
 //
 // A RoundTripper must be safe for concurrent use by multiple
 // goroutines.
+// RoundTripper 必须安全，可以同时被多个 goroutine 使用。
 type RoundTripper interface {
 	// RoundTrip executes a single HTTP transaction, returning
 	// a Response for the provided Request.
+	// RoundTrip 执行单个 HTTP 事务，为给定 Request 返回 Response。
 	//
 	// RoundTrip should not attempt to interpret the response. In
 	// particular, RoundTrip must return err == nil if it obtained
@@ -125,20 +160,32 @@ type RoundTripper interface {
 	// response. Similarly, RoundTrip should not attempt to
 	// handle higher-level protocol details such as redirects,
 	// authentication, or cookies.
+	// RoundTrip 不应该尝试解析（interpret）响应。特别是，如果 RoundTrip
+	// 获得了响应，则必须返回 err==nil，而不管响应的 HTTP 状态码如何。
+	// 如果获取响应失败，则应该保留非 nil err。同样，RoundTrip 不应该尝试
+	// 处理更高级别的协议详细信息，例如重定向，身份验证或 cookie。
 	//
 	// RoundTrip should not modify the request, except for
 	// consuming and closing the Request's Body. RoundTrip may
 	// read fields of the request in a separate goroutine. Callers
 	// should not mutate or reuse the request until the Response's
 	// Body has been closed.
+	// 除了消耗和关闭 Request 的 Body 外，RoundTrip 不应该修改请求。
+	// RoundTrip 可以在单独的 goroutine 中读取请求的字段。在 Response 的
+	// Body 被关闭前，调用者不应更改或重用请求。
 	//
 	// RoundTrip must always close the body, including on errors,
 	// but depending on the implementation may do so in a separate
 	// goroutine even after RoundTrip returns. This means that
 	// callers wanting to reuse the body for subsequent requests
 	// must arrange to wait for the Close call before doing so.
+	// RoundTrip 必须始终关闭 body，包括发生错误时，但根据实现的不同，即使
+	// 在 RoundTrip 返回之后，也可能在单独的 goroutine 中关闭它。 这意味着
+	// 希望重用 body 以用于后续请求的调用者必须安排在等待 Close 调用之后再
+	// 这样做。
 	//
 	// The Request's URL and Header fields must be initialized.
+	// 必须初始化 Request 的 URL 和头部字段。
 	RoundTrip(*Request) (*Response, error)
 }
 

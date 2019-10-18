@@ -811,16 +811,20 @@ func validMethod(method string) bool {
 }
 
 // NewRequest wraps NewRequestWithContext using the background context.
+// NewRequest 使用 background context 封装 NewRequestWithContext.
 func NewRequest(method, url string, body io.Reader) (*Request, error) {
 	return NewRequestWithContext(context.Background(), method, url, body)
 }
 
 // NewRequestWithContext returns a new Request given a method, URL, and
 // optional body.
+// NewRequestWithContext 返回一个具有给定方法，URL，以及可选 body 的新 Request。
 //
 // If the provided body is also an io.Closer, the returned
 // Request.Body is set to body and will be closed by the Client
 // methods Do, Post, and PostForm, and Transport.RoundTrip.
+// 如果提供的 body 也是 io.Closer，那么返回的 Request.Body 即为设置为 body，
+// 并且将通过 Client 方法 Do，Post 和 PostForm，以及 Transport.RoundTrip 关闭。
 //
 // NewRequestWithContext returns a Request suitable for use with
 // Client.Do or Transport.RoundTrip. To create a request for use with
@@ -831,12 +835,20 @@ func NewRequest(method, url string, body io.Reader) (*Request, error) {
 // obtaining a connection, sending the request, and reading the
 // response headers and body. See the Request type's documentation for
 // the difference between inbound and outbound request fields.
+// NewRequestWithContext 返回适合与 Client.Do 或 Transport.RoundTrip 一起使用的请求。
+// 若要创建用于测试服务器处理程序的请求，请使用 net/http/httptest 包中的 NewRequest 函数，
+// 使用 ReadRequest，或手动更新 Request 字段。对于传出的客户端请求，context 控制请求的整个
+// 生命周期及其响应：获取连接，发送请求以及读取响应头部和正文。有关入站和出站请求字段之间的
+// 区别，请参见 Request 类型的文档。
 //
 // If body is of type *bytes.Buffer, *bytes.Reader, or
 // *strings.Reader, the returned request's ContentLength is set to its
 // exact value (instead of -1), GetBody is populated (so 307 and 308
 // redirects can replay the body), and Body is set to NoBody if the
 // ContentLength is 0.
+// 如果 body 的类型为 *bytes.Buffer，*bytes.Reader，或者 *strings.Reader，则返回
+// 的请求的 ContentLength 将设置为确切的值（而不是 -1），将填充 GetBody（因此 307
+// 和 308 重定向可以重播 body），如果 ContentLength 为 0，则将 Body 设置为 BoBody。
 func NewRequestWithContext(ctx context.Context, method, url string, body io.Reader) (*Request, error) {
 	if method == "" {
 		// We document that "" means "GET" for Request.Method, and people have

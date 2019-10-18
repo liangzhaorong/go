@@ -57,12 +57,17 @@ import (
 
 // A Context carries a deadline, a cancellation signal, and other values across
 // API boundaries.
+// Context 包含截止日期，取消信号以及跨越 API 边界的其他值。
 //
 // Context's methods may be called by multiple goroutines simultaneously.
+// Context 的方法可能会被多个 goroutine 同时调用。
 type Context interface {
 	// Deadline returns the time when work done on behalf of this context
 	// should be canceled. Deadline returns ok==false when no deadline is
 	// set. Successive calls to Deadline return the same results.
+	// Deadline 返回应取消（cancel）该上下文 context 完成的工作的时间。若没有设置
+	// deadline（截止日期），则 Deadline 返回 ok==false。连续调用 Deadline 会
+	// 返回相同的结果。
 	Deadline() (deadline time.Time, ok bool)
 
 	// Done returns a channel that's closed when work done on behalf of this
@@ -168,6 +173,7 @@ func (deadlineExceededError) Temporary() bool { return true }
 
 // An emptyCtx is never canceled, has no values, and has no deadline. It is not
 // struct{}, since vars of this type must have distinct addresses.
+//
 type emptyCtx int
 
 func (*emptyCtx) Deadline() (deadline time.Time, ok bool) {

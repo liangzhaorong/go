@@ -74,11 +74,22 @@ const DefaultMaxIdleConnsPerHost = 2
 // This behavior can be managed using Transport's CloseIdleConnections method
 // and the MaxIdleConnsPerHost and DisableKeepAlives fields.
 //
+// 默认情况下，Transport 缓存连接以供将来复用。
+// 当访问多个主机时，这可能会留下许多打开的连接。
+// 可以使用 Transport 的 CloseIdleConnections 方法以及 MaxIdleConnsPerHost 和
+// DisableKeepAlives 字段来管理此行为。
+//
 // Transports should be reused instead of created as needed.
 // Transports are safe for concurrent use by multiple goroutines.
 //
+// 应该复用 Transport 而不是按需创建。
+// 在多个 goroutines 中同时使用 Transport 是安全的。
+//
 // A Transport is a low-level primitive for making HTTP and HTTPS requests.
 // For high-level functionality, such as cookies and redirects, see Client.
+//
+// Transport 是用于发出 HTTP 和 HTTPS 请求的低级原语（primitive）。
+// 有关 cookies 和重定向等的高级功能，参见 Client。
 //
 // Transport uses HTTP/1.1 for HTTP URLs and either HTTP/1.1 or HTTP/2
 // for HTTPS URLs, depending on whether the server supports HTTP/2,
@@ -86,11 +97,21 @@ const DefaultMaxIdleConnsPerHost = 2
 // To explicitly enable HTTP/2 on a transport, use golang.org/x/net/http2
 // and call ConfigureTransport. See the package docs for more about HTTP/2.
 //
+// Transport 是否为 HTTP URL 使用 HTTP/1.1，是否为 HTTPS URLs 使用 HTTP/1.1 或 HTTP/2，
+// 这些取决于服务器是否支持 HTTP/2，以及如何配置 Transport。DefaultTransport 支持 HTTP/2。
+// 要明确在 Transport 上启用 HTTP/2，请使用 golang.org/x/net/http2 并调用 ConfigureTransport。
+// 有关 HTTP/2 的更多信息参见包文档。
+//
 // Responses with status codes in the 1xx range are either handled
 // automatically (100 expect-continue) or ignored. The one
 // exception is HTTP status code 101 (Switching Protocols), which is
 // considered a terminal status and returned by RoundTrip. To see the
 // ignored 1xx responses, use the httptrace trace package's
+// ClientTrace.Got1xxResponse.
+//
+// 状态码在 1xx 范围内的响应将被自动处理（如 100 expect-continue）或被忽略。
+// 一个例外是 HTTP 状态码 101（Switching Protocols），它被认为是终端（terminal）
+// 状态，并由 RoundTrip 返回。要查看被忽略的 1xx 响应，请使用 httptrace 跟踪包的
 // ClientTrace.Got1xxResponse.
 //
 // Transport only retries a request upon encountering a network error
@@ -101,6 +122,12 @@ const DefaultMaxIdleConnsPerHost = 2
 // entry. If the idempotency key value is an zero-length slice, the
 // request is treated as idempotent but the header is not sent on the
 // wire.
+//
+// 如果请求是幂等的（idempotent）且没有 body 或其定义了 Request.GetBody，
+// 则 Transport 仅在遇到网络错误时重试该请求。 如果 HTTP 方法为 GET，HEAD，OPTIONS，
+// 或者 TRACE，则认为该 HTTP 请求是幂等的；或者如果它们的 Header 映射中包含 "Idempotency-Key"
+// 或 "X-Idempotent-Key" 项，则也认为该请求是幂等的。如果幂等键值为零长度的切片，
+// 则将请求视为幂等，但头部不会被发送出去。
 type Transport struct {
 	idleMu       sync.Mutex
 	closeIdle    bool                                // user has requested to close all idle conns
@@ -127,56 +154,100 @@ type Transport struct {
 	// "http" is assumed.
 	//
 	// If Proxy is nil or returns a nil *URL, no proxy is used.
+	//
+	// Proxy 指定一个函数来返回给定 Request 的代理。如果函数返回非 nil 错误，则请求将
+	// 中止并返回该错误。
+	//
+	// 代理类型由 URL scheme 确定。支持 "http"，"https"，以及 "socks5"。如果 scheme 为空，
+	// 默认使用 "http"。
+	//
+	// 如果 Proxy 为 nil 或者返回一个 nil *URL，意味着没有使用代理。
 	Proxy func(*Request) (*url.URL, error)
 
 	// DialContext specifies the dial function for creating unencrypted TCP connections.
 	// If DialContext is nil (and the deprecated Dial below is also nil),
 	// then the transport dials using package net.
 	//
+	// DialContext 指定用于创建未加密的 TCP 连接的拨号函数。
+	// 如果 DialContext 为 nil（并且下面不推荐使用的 Dial 也为 nil），
+	// 则传输使用包 net 进行拨号。
+	//
 	// DialContext runs concurrently with calls to RoundTrip.
 	// A RoundTrip call that initiates a dial may end up using
 	// a connection dialed previously when the earlier connection
 	// becomes idle before the later DialContext completes.
+	//
+	// DialContext 与 RoundTrip 的调用同时运行。
+	// 当较早的连接在后面的 DialContext 完成之前变为空闲，发起拨号的
+	// RoundTrip 调用可能会使用先前拨号的连接结束。
 	DialContext func(ctx context.Context, network, addr string) (net.Conn, error)
 
 	// Dial specifies the dial function for creating unencrypted TCP connections.
+	//
+	// Dial 指定用于创建未加密的 TCP 连接拨号函数。
 	//
 	// Dial runs concurrently with calls to RoundTrip.
 	// A RoundTrip call that initiates a dial may end up using
 	// a connection dialed previously when the earlier connection
 	// becomes idle before the later Dial completes.
 	//
+	// Dial 与 RoundTrip 的调用同时运行。
+	// 当较早的连接在后面的 Dial 完成之前变为空闲，发起拨号的 RoundTrip
+	// 调用可能会使用先前拨号的连接结束。
+	//
 	// Deprecated: Use DialContext instead, which allows the transport
 	// to cancel dials as soon as they are no longer needed.
 	// If both are set, DialContext takes priority.
+	//
+	// 警告：推荐使用 DialContext 代替，它允许传输在不再需要拨号时立即取消它们。
+	// 如果两个函数都设置了，则 DialContext 优先级高。
 	Dial func(network, addr string) (net.Conn, error)
 
 	// DialTLS specifies an optional dial function for creating
 	// TLS connections for non-proxied HTTPS requests.
 	//
+	// DialTLS 指定一个可选的拨号函数用于创建非代理的 HTTPS 请求 TLS 连接。
+	//
 	// If DialTLS is nil, Dial and TLSClientConfig are used.
+	//
+	// 如果 DialTLS 为 nil，则使用 Dial 和 TLSClientConfig。
 	//
 	// If DialTLS is set, the Dial hook is not used for HTTPS
 	// requests and the TLSClientConfig and TLSHandshakeTimeout
 	// are ignored. The returned net.Conn is assumed to already be
 	// past the TLS handshake.
+	//
+	// 如果设置了 DialTLS，那么 Dial 钩子将不用于 HTTPS 请求，且忽略
+	// TLSClientConfig 和 TLSHandshakeTimeout。假定返回的 net.Conn
+	// 已通过 TLS 握手。
 	DialTLS func(network, addr string) (net.Conn, error)
 
 	// TLSClientConfig specifies the TLS configuration to use with
 	// tls.Client.
 	// If nil, the default configuration is used.
 	// If non-nil, HTTP/2 support may not be enabled by default.
+	//
+	// TLSClientConfig 指定要与 tls.Client 一起使用的 TLS 配置。
+	// 如果为 nil，则使用默认配置。
+	// 如果非 nil，默认不启用 HTTP/2 支持。
 	TLSClientConfig *tls.Config
 
 	// TLSHandshakeTimeout specifies the maximum amount of time waiting to
 	// wait for a TLS handshake. Zero means no timeout.
+	//
+	// TLSHandshakeTimeout 指定等待 TLS 握手的最长时间。0 表示没有超时。
 	TLSHandshakeTimeout time.Duration
 
 	// DisableKeepAlives, if true, disables HTTP keep-alives and
 	// will only use the connection to the server for a single
 	// HTTP request.
 	//
+	// DisableKeepAlives（如果为 true）将禁用 HTTP keep-lives，并且仅将
+	// 与服务器的连接用于单个 HTTP 请求。
+	//
 	// This is unrelated to the similarly named TCP keep-alives.
+	//
+	// 这与类似命名的 TCP keep-avlies 无关。
 	DisableKeepAlives bool
 
 	// DisableCompression, if true, prevents the Transport from
@@ -187,34 +258,51 @@ type Transport struct {
 	// decoded in the Response.Body. However, if the user
 	// explicitly requested gzip it is not automatically
 	// uncompressed.
+	// DisableCompression（如果为 true），则当请求不包含 Accept-Encoding
+	// 值时，防止 Transport 使用 "Accept-Encoding: gzip" 请求头来请求压缩。
+	// 如果 Transport 本身请求 gzip 并获得 gzip 压缩的响应，则会在
+	// Response.Body 中透明地解码。然后，如果用户明确请求 gzip，则不会自动将其
+	// 解压缩。
 	DisableCompression bool
 
 	// MaxIdleConns controls the maximum number of idle (keep-alive)
 	// connections across all hosts. Zero means no limit.
+	// MaxIdleConns 控制所有主机之间的最大空闲（keep-alive）连接数。
+	// 0 表示没有限制。
 	MaxIdleConns int
 
 	// MaxIdleConnsPerHost, if non-zero, controls the maximum idle
 	// (keep-alive) connections to keep per-host. If zero,
 	// DefaultMaxIdleConnsPerHost is used.
+	// MaxIdleConnsPerHost（如果非 0）控制与每个主机保持空闲连接的最大
+	// 连接数。如果为 0，则使用 DefaultMaxIdleConnsPerHost。
 	MaxIdleConnsPerHost int
 
 	// MaxConnsPerHost optionally limits the total number of
 	// connections per host, including connections in the dialing,
 	// active, and idle states. On limit violation, dials will block.
+	// MaxConnsPerHost 可选地限制与每个主机的总连接数，包含拨号中的活动连接，
+	// 以及空闲状态下的连接。超出限制时，拨号将阻塞。
 	//
 	// Zero means no limit.
+	// 0 表示没有限制。
 	MaxConnsPerHost int
 
 	// IdleConnTimeout is the maximum amount of time an idle
 	// (keep-alive) connection will remain idle before closing
 	// itself.
 	// Zero means no limit.
+	// IdleConnTimeout 是空闲（keep-alive）连接在关闭自身之前将保持
+	// 空闲状态的最长时间。
+	// 0 表示没有限制。
 	IdleConnTimeout time.Duration
 
 	// ResponseHeaderTimeout, if non-zero, specifies the amount of
 	// time to wait for a server's response headers after fully
 	// writing the request (including its body, if any). This
 	// time does not include the time to read the response body.
+	// ResponseHeaderTimeout（如果非 0）指定在完全写入（即发送）请求（包括其 body）
+	// 之后等待服务器的响应头时间。该时间不包括读取响应 body 的时间。
 	ResponseHeaderTimeout time.Duration
 
 	// ExpectContinueTimeout, if non-zero, specifies the amount of
@@ -236,6 +324,9 @@ type Transport struct {
 	// must return a RoundTripper that then handles the request.
 	// If TLSNextProto is not nil, HTTP/2 support is not enabled
 	// automatically.
+	// TLSNextProto 指定在 TLS ALPN 协议协商之后如何切换到备用协议（如 HTTP/2）。
+	// 如果 Transport 使用非空协议名称发起 TLS 连接，并且 TLSNextProto 包含
+	// 该键（如 "h2"）的映射项，
 	TLSNextProto map[string]func(authority string, c *tls.Conn) RoundTripper
 
 	// ProxyConnectHeader optionally specifies headers to send to
@@ -247,20 +338,28 @@ type Transport struct {
 	// header.
 	//
 	// Zero means to use a default limit.
+	//
+	// MaxResponseHeaderBytes 指定对服务器的响应头中允许的响应字节数的限制。
+	// 0 表示使用默认限制。
 	MaxResponseHeaderBytes int64
 
 	// WriteBufferSize specifies the size of the write buffer used
 	// when writing to the transport.
 	// If zero, a default (currently 4KB) is used.
+	// WriteBufferSize 指定在写入到传输时使用的写缓冲区大小。
+	// 如果为 0，默认使用 4KB。
 	WriteBufferSize int
 
 	// ReadBufferSize specifies the size of the read buffer used
 	// when reading from the transport.
 	// If zero, a default (currently 4KB) is used.
+	// ReadBufferSize 指定在从传输中读取时使用的读缓冲区大小。
+	// 如果为 0，默认使用 4KB。
 	ReadBufferSize int
 
 	// nextProtoOnce guards initialization of TLSNextProto and
 	// h2transport (via onceSetNextProtoDefaults)
+	// nextProtoOnce 防止 TLSNextProto 和 h2transport 的初始化（通过 onceSetNextProtoDefaults）
 	nextProtoOnce      sync.Once
 	h2transport        h2Transport // non-nil if http2 wired up
 	tlsNextProtoWasNil bool        // whether TLSNextProto was nil when the Once fired
