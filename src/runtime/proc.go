@@ -120,6 +120,9 @@ func main() {
 	// Max stack size is 1 GB on 64-bit, 250 MB on 32-bit.
 	// Using decimal instead of binary GB and MB because
 	// they look nicer in the stack overflow failure message.
+	//
+	// 64bit 系统下栈最大值为 1GB，32bit 则为 250MB。
+	// 使用十进制而不是二进制 GB 和 MB，因为它们在堆栈溢出失败消息中看起来更好。
 	if sys.PtrSize == 8 {
 		maxstacksize = 1000000000
 	} else {
@@ -130,6 +133,7 @@ func main() {
 	mainStarted = true
 
 	if GOARCH != "wasm" { // no threads on wasm yet, so no sysmon
+		// 启动后台监控
 		systemstack(func() {
 			newm(sysmon, nil)
 		})
@@ -161,8 +165,10 @@ func main() {
 	}()
 
 	// Record when the world started.
+	// 记录启动时间
 	runtimeInitTime = nanotime()
 
+	// 启动垃圾回收器
 	gcenable()
 
 	main_init_done = make(chan bool)
@@ -194,11 +200,13 @@ func main() {
 	needUnlock = false
 	unlockOSThread()
 
+	// 如果是库方式，则不执行用户入口函数
 	if isarchive || islibrary {
 		// A program compiled with -buildmode=c-archive or c-shared
 		// has a main, but it is not executed.
 		return
 	}
+	// 执行用户入口函数
 	fn := main_main // make an indirect call, as the linker doesn't know the address of the main package when laying down the runtime
 	fn()
 	if raceenabled {
@@ -222,6 +230,7 @@ func main() {
 		gopark(nil, nil, waitReasonPanicWait, traceEvGoStop, 1)
 	}
 
+	// 退出进程
 	exit(0)
 	for {
 		var x *int32
@@ -526,6 +535,13 @@ func cpuinit() {
 //	call runtime·mstart
 //
 // The new G calls runtime·main.
+//
+// 引导顺序为：
+//   - 调用 osinit
+//   - 调用 schedinit
+//   - make & queue new G
+//   - 调用 runtime.mstart
+// 新的 G 调用 runtime.main。
 func schedinit() {
 	// raceinit must be the first call to race detector.
 	// In particular, it must be done before mallocinit below calls racemapshadow.
@@ -534,12 +550,15 @@ func schedinit() {
 		_g_.racectx, raceprocctx0 = raceinit()
 	}
 
+	// M 最大数量限制
 	sched.maxmcount = 10000
 
 	tracebackinit()
 	moduledataverify()
+	// 内存相关初始化
 	stackinit()
 	mallocinit()
+	// M 相关初始化
 	mcommoninit(_g_.m)
 	cpuinit()       // must run before alginit
 	alginit()       // maps must not be used before this call
@@ -550,12 +569,17 @@ func schedinit() {
 	msigsave(_g_.m)
 	initSigmask = _g_.m.sigmask
 
+	// 存储命令行参数和环境变量
 	goargs()
 	goenvs()
+	// 解析 GODEBUG 的调试参数
 	parsedebugvars()
+	// 初始化垃圾回收器
 	gcinit()
 
+	// 初始化 poll 时间
 	sched.lastpoll = uint64(nanotime())
+	// 设置 GOMAXPROCS
 	procs := ncpu
 	if n, ok := atoi32(gogetenv("GOMAXPROCS")); ok && n > 0 {
 		procs = n

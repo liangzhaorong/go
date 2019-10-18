@@ -11,6 +11,10 @@
 // internal linking. This is the entry point for the program from the
 // kernel for an ordinary -buildmode=exe program. The stack holds the
 // number of arguments and the C-style argv.
+//
+// 使用内部链接时，_rt0_amd64 是大多数 amd64 系统的常用启动代码。 
+// 这是内核中普通 -buildmode=exe 程序的程序入口点。堆栈保存参数数量
+// 和 C 风格的 argv
 TEXT _rt0_amd64(SB),NOSPLIT,$-8
 	MOVQ	0(SP), DI	// argc
 	LEAQ	8(SP), SI	// argv

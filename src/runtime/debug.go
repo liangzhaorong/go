@@ -40,6 +40,10 @@ func GOMAXPROCS(n int) int {
 // The set of available CPUs is checked by querying the operating system
 // at process startup. Changes to operating system CPU allocation after
 // process startup are not reflected.
+//
+// NumCPU 返回当前进程可用的逻辑 CPU 数量。
+// 通过在进程启动时查询操作系统来检查一组可用的 CPU。进程启动后对操作系统
+// CPU 分配的更改不会反映出来。
 func NumCPU() int {
 	return int(ncpu)
 }
