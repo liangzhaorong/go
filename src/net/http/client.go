@@ -606,6 +606,30 @@ func urlErrorOp(method string) string {
 // Any returned error will be of type *url.Error. The url.Error
 // value's Timeout method will report true if request timed out or was
 // canceled.
+//
+// Do 根据 Client 上配置的策略（例如重定向，Cookie，身份验证）发送 
+// HTTP 请求并返回 HTTP 响应。
+//
+// 如果是由 client 策略（例如 CheckRedirect）或无法发送 HTTP（例如
+// 网络连接问题）引起的，则返回错误。 非 2xx 状态码不会导致错误。
+//
+// 如果返回的错误为 nil，则 Response 将包含一个非 nil 的 Body，希望
+// 用户将其关闭。如果未同时将 Body 读取到 EOF 并关闭，则 Client 的底层
+// 的 RoundTripper（通常是 Transport）可能无法将与服务器的持久 TCP 
+// 连接重新用于后续的 "keep-alive" 请求。
+//
+// 请求 Body（如果非 nil）将被底层的 Transport 关闭，即使发生错误也是如此。
+//
+// 出错时，任何 Response 都可以忽略。仅当 CheckRedirect 失败并且返回的
+// Response.Body 已关闭时，才会出现具有非 nil error 的非 nil Response。
+//
+// 通常，将使用 Get，Post 或 PostForm 代替 Do。
+//
+// 如果服务器回复重定向，则 Client 首先使用 CheckRedirect 函数来确定是否
+// 应遵循重定向。 如果允许，则 301、302 或 303 重定向会导致后续请求使用 
+// HTTP 方法 GET（如果原始请求为 HEAD，则为 HEAD），而没有正文。 如果定义了
+// Request.GetBody 函数，则 307 或 308 重定向将保留原始的 HTTP 方法和 body。 
+// NewRequest 函数自动为常见的标准库 body 类型设置 GetBody。
 func (c *Client) Do(req *Request) (*Response, error) {
 	return c.do(req)
 }
@@ -628,7 +652,7 @@ func (c *Client) do(req *Request) (retres *Response, reterr error) {
 		deadline      = c.deadline()
 		reqs          []*Request
 		resp          *Response
-		copyHeaders   = c.makeHeadersCopier(req)
+		copyHeaders   = c.makeHeadersCopier(req) // 返回一个闭包回调函数，使当出现重定向时可以复制原始的请求头
 		reqBodyClosed = false // have we closed the current req.Body?
 
 		// Redirect behavior:
@@ -655,6 +679,7 @@ func (c *Client) do(req *Request) (retres *Response, reterr error) {
 	for {
 		// For all but the first request, create the next
 		// request hop and replace req.
+		// 对于除第一个请求之外的所有请求，创建下一个请求 hop 并替换 req
 		if len(reqs) > 0 {
 			loc := resp.Header.Get("Location")
 			if loc == "" {
@@ -765,9 +790,14 @@ func (c *Client) do(req *Request) (retres *Response, reterr error) {
 // makeHeadersCopier makes a function that copies headers from the
 // initial Request, ireq. For every redirect, this function must be called
 // so that it can copy headers into the upcoming Request.
+//
+// makeHeadersCopier 生成一个回调函数，该回调函数能够从初始请求 ireq 中复制头部。 
+// 对于每个重定向，必须调用此函数，以便可以将头部复制到即将到来的 Request 中。
 func (c *Client) makeHeadersCopier(ireq *Request) func(*Request) {
 	// The headers to copy are from the very initial request.
 	// We use a closured callback to keep a reference to these original headers.
+	// 要复制的头部来自最初的请求。
+	// 我们要使用闭包（closured）回调来保留对这些原始头部的引用。
 	var (
 		ireqhdr  = cloneOrMakeHeader(ireq.Header)
 		icookies map[string][]*Cookie
@@ -792,6 +822,15 @@ func (c *Client) makeHeadersCopier(ireq *Request) func(*Request) {
 		// regardless of domain or path.
 		//
 		// See https://golang.org/issue/17494
+		//
+		// 如果存在 Jar，并且通过请求头部提供了一些初始 cookie，那么在进行重定向时，
+		// 我们可能需要更改初始 cookie，因为每个重定向最终都可能会修改先前存在的 cookie
+		//
+		// 由于已经在请求头部中设置的 cookie 不包含有关原始 domain 和 path 的信息，
+		// 因此以下逻辑假定任何新设置的 cookie 都将覆盖原始 cookie，而与 domain 或
+		// path 无关。
+		//
+		// 参见 https://golang.org/issue/17494
 		if c.Jar != nil && icookies != nil {
 			var changed bool
 			resp := req.Response // The response that caused the upcoming redirect

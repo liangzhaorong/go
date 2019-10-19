@@ -153,6 +153,13 @@ func ipv6only(addr IPAddr) bool {
 //
 // See func Dial for a description of the hostport parameter, and host
 // and port results.
+//
+// SplitHostPort 将 "host:port", "host%zone:port", "[host]:port" 或
+// "[host%zone]:port" 形式的网络地址拆分成 host 或者 host%zone 以及 port.
+//
+// hostport 中的字面量 IPv6 地址必须用方括号括起来，例如 "[::1]:80", "[::1%lo0]:80"。
+//
+// 有关 hostport 参数以及 host 和 port 结果的说明，请参见 func Dial。
 func SplitHostPort(hostport string) (host, port string, err error) {
 	const (
 		missingPort   = "missing port in address"

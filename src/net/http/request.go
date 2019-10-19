@@ -248,7 +248,9 @@ type Request struct {
 	// For server requests, it is unused.
 	//
 	// GetBody 定义了一个可选的 func 来返回 Body 的副本。当重定向需要多次
-	// 读取正文时，
+	// 读取正文时，它将用于客户端请求。使用 GetBody 仍然需要设置 Body。
+	//
+	// 对于服务器请求，它是未使用的。
 	GetBody func() (io.ReadCloser, error)
 
 	// ContentLength records the length of the associated content.
@@ -258,6 +260,9 @@ type Request struct {
 	//
 	// For client requests, a value of 0 with a non-nil Body is
 	// also treated as unknown.
+	//
+	// ContentLength 记录相关内容的长度。值 -1 表示该长度是未知的。
+	// 值 >= 0 表示可从 Body 中读取指定的字节数。
 	ContentLength int64
 
 	// TransferEncoding lists the transfer encodings from outermost to
@@ -265,6 +270,11 @@ type Request struct {
 	// TransferEncoding can usually be ignored; chunked encoding is
 	// automatically added and removed as necessary when sending and
 	// receiving requests.
+	//
+	// TransferEncoding 列出从最外层（outermost）到最内层（innermost）
+	// 的传输编码。空列表表示 "identity" 编码。
+	// 通常可以忽略 TransferEncoding。发送和接收请求时，将根据需要自动添加和
+	// 删除 chunked 编码。
 	TransferEncoding []string
 
 	// Close indicates whether to close the connection after
@@ -277,6 +287,14 @@ type Request struct {
 	// For client requests, setting this field prevents re-use of
 	// TCP connections between requests to the same hosts, as if
 	// Transport.DisableKeepAlives were set.
+	//
+	// 对于服务器，Close 指示是否在响应该请求后关闭连接；
+	// 对于客户端，Close 指示是否在发送该请求并读取响应后关闭连接。
+	//
+	// 对于服务器请求，HTTP 服务器会自动处理此请求，并且 Handlers 不需要该字段。
+	//
+	// 对于客户端请求，设置此字段可防止在相同主机的请求之间复用该 TCP 连接，
+	// 就像设置了 Transport.DisableKeepAlives 一样。
 	Close bool
 
 	// For server requests, Host specifies the host on which the
@@ -298,12 +316,27 @@ type Request struct {
 	// header to send. If empty, the Request.Write method uses
 	// the value of URL.Host. Host may contain an international
 	// domain name.
+	//
+	// 对于服务器请求，Host 指定在其上搜索 URL 的主机。对于 HTTP/1(根据
+	// RFC 7230, section 5.4)，这是 "Host" 头部的值或 URL 中提供的
+	// 主机名。对于 HTTP/2，它是 ":authority" 伪头部字段中的值。
+	// 为了防止 DNS 重新绑定（rebinding）攻击，服务器 Handlers 应该
+	// 验证 Host 头部是否具有其认为自己具有权威性的值。随附的 ServeMux
+	// 支持注册到特定的主机名的模式，从而保护其注册的 Handlers。
+	//
+	// 对于客户端请求，Host 可选地覆盖发送的 Host 头部。如果为空，则
+	// Request.Write 方法将使用 URL.Host 的值。Host 可能包含一个国际域名。
 	Host string
 
 	// Form contains the parsed form data, including both the URL
 	// field's query parameters and the PATCH, POST, or PUT form data.
 	// This field is only available after ParseForm is called.
 	// The HTTP client ignores Form and uses Body instead.
+	//
+	// Form 包含已经解析的表达数据，包括 URL 字段 query 参数和 PATCH，
+	// POST，或者 PUT 表达数据。
+	// 该字段仅在调用 ParseForm 后可用。
+	// HTTP 客户端会忽略 Form，并改用 Body。
 	Form url.Values
 
 	// PostForm contains the parsed form data from PATCH, POST
@@ -311,11 +344,20 @@ type Request struct {
 	//
 	// This field is only available after ParseForm is called.
 	// The HTTP client ignores PostForm and uses Body instead.
+	//
+	// PostForm 包含从 PATCH，POST 或 PUT 正文参数解析到的表单数据。
+	//
+	// 该字段仅在调用 ParseForm 后可用。
+	// HTTP 客户端会忽略 Form，并改用 Body。
 	PostForm url.Values
 
 	// MultipartForm is the parsed multipart form, including file uploads.
 	// This field is only available after ParseMultipartForm is called.
 	// The HTTP client ignores MultipartForm and uses Body instead.
+	//
+	// MultipartForm 是已解析的多部分表单，包括文件上传。 仅在调用 
+	// ParseMultipartForm 之后，此字段才可用。 HTTP 客户端会忽略 
+	// MultipartForm 并改用Body。
 	MultipartForm *multipart.Form
 
 	// Trailer specifies additional headers that are sent after the request
@@ -336,6 +378,20 @@ type Request struct {
 	// not mutate Trailer.
 	//
 	// Few HTTP clients, servers, or proxies support HTTP trailers.
+	//
+	// Trailer 指定在请求正文之后发送的其他头部。
+	//
+	// 对于服务器请求，初始化的 Trailer 映射仅包含 trailer 键，其值为 nil。
+	// （客户端声明该 trailer 将在少稍后发送）。handler 从 Body 读取时，它不可以
+	// 引用 Trailer。从 Body 读取返回 EOF 后，Trailer 可以再次读取，并且包含非
+	// nil 值（如果它们是由客户端发送的话）。
+	//
+	// 对于客户端请求，必须初始化 Trailer 包含 trailer key 的映射，以便以后发送。
+	// 该值可以为 nil 或它们的最终值。ContentLength 必须为 0 或 -1，才能发送
+	// chunked 请求。发送 HTTP 请求后，可以在读取请求正文时更新映射值。一旦正文返回
+	// EOF，调用者就不可以再更改 Trailer。
+	//
+	// 很少有 HTTP 客户端，服务器或代理支持 HTTP trailers。
 	Trailer Header
 
 	// RemoteAddr allows HTTP servers and other software to record
@@ -345,12 +401,21 @@ type Request struct {
 	// sets RemoteAddr to an "IP:port" address before invoking a
 	// handler.
 	// This field is ignored by the HTTP client.
+	//
+	// RemoteAddr 允许 HTTP 服务器和其他软件记录发送请求的网络地址，
+	// 通常用于日志。ReadRequest 不会填写此字段，并且没有定义的格式。 
+	// 在调用 handler 之前，此程序包中的 HTTP 服务器将 RemoteAddr 
+	// 设置为 "IP:port" 地址。
 	RemoteAddr string
 
 	// RequestURI is the unmodified request-target of the
 	// Request-Line (RFC 7230, Section 3.1.1) as sent by the client
 	// to a server. Usually the URL field should be used instead.
 	// It is an error to set this field in an HTTP client request.
+	//
+	// RequestURI 是客户端发送到服务器的请求行（RFC 7230，第3.1.1节）的
+	// 未经修改的请求目标。 通常应改用 URL 字段。 在 HTTP 客户端请求中设置
+	// 此字段是错误的。
 	RequestURI string
 
 	// TLS allows HTTP servers and other software to record
@@ -360,6 +425,12 @@ type Request struct {
 	// TLS-enabled connections before invoking a handler;
 	// otherwise it leaves the field nil.
 	// This field is ignored by the HTTP client.
+	//
+	// TLS 允许 HTTP 服务器和其他软件记录有关在其上接收到请求的
+	// TLS 连接的信息。 ReadRequest 不会填写此字段。 此程序包中的 
+	// HTTP 服务器在调用 handler 之前为启用 TLS 的连接设置该字段。
+	// 否则，该字段将为零。
+	// HTTP 客户端忽略该字段。
 	TLS *tls.ConnectionState
 
 	// Cancel is an optional channel whose closure indicates that the client
@@ -371,17 +442,32 @@ type Request struct {
 	// Deprecated: Set the Request's context with NewRequestWithContext
 	// instead. If a Request's Cancel field and context are both
 	// set, it is undefined whether Cancel is respected.
+	//
+	// Cancel 是一个可选 channel，其关闭指示客户请求应被视为已取消。 
+	// 并非 RoundTripper 的所有实现都支持 Cancel。
+	//
+	// 对于服务器请求，此字段不适用。
+	//
+	// 不推荐使用：而是使用 NewRequestWithContext 设置的 Request 的 context.
+	// 如果 Request 的 Cancel 字段和 context 同时设置，则不确定是否遵守
+	// Cancel。
 	Cancel <-chan struct{}
 
 	// Response is the redirect response which caused this request
 	// to be created. This field is only populated during client
 	// redirects.
+	//
+	// Response 是导致创建此请求的重定向响应。 仅在客户端重定向期间填充此字段。
 	Response *Response
 
 	// ctx is either the client or server context. It should only
 	// be modified via copying the whole Request using WithContext.
 	// It is unexported to prevent people from using Context wrong
 	// and mutating the contexts held by callers of the same request.
+	//
+	// ctx 是客户端上下文或服务器上下文。 只能通过使用 WithContext 复制
+	// 整个 Request 来修改它。它不会导出，以防止人们错误使用 Context 
+	// 并更改由同一请求的调用者持有的上下文。
 	ctx context.Context
 }
 
@@ -469,6 +555,8 @@ func (r *Request) UserAgent() string {
 }
 
 // Cookies parses and returns the HTTP cookies sent with the request.
+//
+// Cookies 解析并返回与请求一起发送的 HTTP cookie。
 func (r *Request) Cookies() []*Cookie {
 	return readCookies(r.Header, "")
 }
@@ -980,6 +1068,10 @@ func NewRequestWithContext(ctx context.Context, method, url string, body io.Read
 			// that broke people during the Go 1.8 testing
 			// period. People depend on it being 0 I
 			// guess. Maybe retry later. See Issue 18117.
+			//
+			// 在这里我们将其设置为 -1（至少在 body != NoBody 下）
+			// 以表示未知，当这在 Go 1.8 测试期间使人们不寒而栗。
+			// 人们认为它是 0。也许稍后再试。参见 Issue 18117.
 		}
 		// For client requests, Request.ContentLength of 0
 		// means either actually 0, or unknown. The only way
@@ -989,6 +1081,13 @@ func NewRequestWithContext(ctx context.Context, method, url string, body io.Read
 		// so we use a well-known ReadCloser variable instead
 		// and have the http package also treat that sentinel
 		// variable to mean explicitly zero.
+		//
+		// 对于客户端请求，Request.ContentLength 为 0 表示实际上为
+		// 0 或未知。明确表示 ContentLength 的唯一方法是设置 Body
+		// 为 nil。但是事实证明，太多代码依赖于 NewRequest 返回一个
+		// 非 nil 的 Body，因此我们改用一个众所周知的 ReadCloser 
+		// 变量，并且让 http 包也将该哨兵（sentinel）变量视为显式地
+		// 表示 0.
 		if req.GetBody != nil && req.ContentLength == 0 {
 			req.Body = NoBody
 			req.GetBody = func() (io.ReadCloser, error) { return NoBody, nil }

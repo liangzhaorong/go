@@ -672,6 +672,10 @@ func parseIPv6(s string) (ip IP) {
 // or IPv6 ("2001:db8::68") form.
 // If s is not a valid textual representation of an IP address,
 // ParseIP returns nil.
+//
+// ParseIP 将 s 解析为 IP 地址，并返回结果。 字符串 s 可以是点分十进制 ("192.0.2.1")
+// 或 IPv6 ("2001:db8::68") 形式
+// 如果 s 不是 IP 地址的有效文本表示形式，则 ParseIP 返回 nil
 func ParseIP(s string) IP {
 	for i := 0; i < len(s); i++ {
 		switch s[i] {

@@ -18,12 +18,20 @@ import (
 //
 // The keys should be in canonical form, as returned by
 // CanonicalHeaderKey.
+//
+// Header 代表 HTTP 头部的键值对。
+//
+// key 应使用 CanonicalHeaderKey 返回的规范化形式。
 type Header map[string][]string
 
 // Add adds the key, value pair to the header.
 // It appends to any existing values associated with key.
 // The key is case insensitive; it is canonicalized by
 // CanonicalHeaderKey.
+//
+// Add 添加 key/value 对到 header 中。
+// 它附加到与 key 关联的任何现有值。
+// 该 key 不区分大小写；它由 CanonicalHeaderKey 进行规范化。
 func (h Header) Add(key, value string) {
 	textproto.MIMEHeader(h).Add(key, value)
 }
@@ -33,6 +41,11 @@ func (h Header) Add(key, value string) {
 // associated with key. The key is case insensitive; it is
 // canonicalized by textproto.CanonicalMIMEHeaderKey.
 // To use non-canonical keys, assign to the map directly.
+//
+// Set 将与 key 关联的头部项设置为单个元素值。 它替换了与 key 
+// 关联的任何现有值。 key 不区分大小写； 它由 
+// textproto.CanonicalMIMEHeaderKey 规范化。 
+// 要使用非规范 key，请直接分配给 map。
 func (h Header) Set(key, value string) {
 	textproto.MIMEHeader(h).Set(key, value)
 }
@@ -43,6 +56,10 @@ func (h Header) Set(key, value string) {
 // used to canonicalize the provided key. To access multiple
 // values of a key, or to use non-canonical keys, access the
 // map directly.
+//
+// Get 获取与给定 key 关联的第一个值。 如果没有与 key 相关联的值，
+// 则 Get 返回 ""。 textproto.CanonicalMIMEHeaderKey 用于规范化
+// 提供的 key。 要访问 key 的多个值或使用非规范 key，请直接访问 map。
 func (h Header) Get(key string) string {
 	return textproto.MIMEHeader(h).Get(key)
 }
@@ -79,6 +96,8 @@ func (h Header) write(w io.Writer, trace *httptrace.ClientTrace) error {
 }
 
 // Clone returns a copy of h or nil if h is nil.
+//
+// Clone 返回 h 的副本，或者如果 h 为 nil，则返回 nil
 func (h Header) Clone() Header {
 	if h == nil {
 		return nil

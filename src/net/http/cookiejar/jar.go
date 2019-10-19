@@ -151,15 +151,22 @@ func hasDotSuffix(s, suffix string) bool {
 // Cookies implements the Cookies method of the http.CookieJar interface.
 //
 // It returns an empty slice if the URL's scheme is not HTTP or HTTPS.
+//
+// Cookies 实现了 http.CookieJar 接口的 Cookies 方法。
+//
+// 如果 URL 的 scheme 不是 HTTP 或 HTTPS，它将返回一个空 slice。
 func (j *Jar) Cookies(u *url.URL) (cookies []*http.Cookie) {
 	return j.cookies(u, time.Now())
 }
 
 // cookies is like Cookies but takes the current time as a parameter.
+//
+// cookies 类似于 Cookies，但将当前时间作为参数
 func (j *Jar) cookies(u *url.URL, now time.Time) (cookies []*http.Cookie) {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return cookies
 	}
+	// 去除 port，并返回规范化的 host
 	host, err := canonicalHost(u.Host)
 	if err != nil {
 		return cookies
@@ -294,6 +301,8 @@ func (j *Jar) setCookies(u *url.URL, cookies []*http.Cookie, now time.Time) {
 
 // canonicalHost strips port from host if present and returns the canonicalized
 // host name.
+//
+// canonicalHost 从 host 剥离端口（如果存在），并返回规范化的主机名
 func canonicalHost(host string) (string, error) {
 	var err error
 	host = strings.ToLower(host)
@@ -324,6 +333,8 @@ func hasPort(host string) bool {
 }
 
 // jarKey returns the key to use for a jar.
+//
+// jarKey 返回用于 jar 的 key
 func jarKey(host string, psl PublicSuffixList) string {
 	if isIP(host) {
 		return host
@@ -355,6 +366,8 @@ func jarKey(host string, psl PublicSuffixList) string {
 }
 
 // isIP reports whether host is an IP address.
+//
+// isIP 报告主机是否为 IP 地址。
 func isIP(host string) bool {
 	return net.ParseIP(host) != nil
 }
