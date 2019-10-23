@@ -35,10 +35,15 @@ func (k *contextKey) String() string { return "net/http context value " + k.name
 
 // Given a string of the form "host", "host:port", or "[ipv6::address]:port",
 // return true if the string includes a port.
+//
+// 给定格式为 "host", "host:port", 或 "[ipv6::address]:port"，
+// 如果字符串包含 port 则返回 true
 func hasPort(s string) bool { return strings.LastIndex(s, ":") > strings.LastIndex(s, "]") }
 
 // removeEmptyPort strips the empty port in ":port" to ""
 // as mandated by RFC 3986 Section 6.2.3.
+//
+// removeEmptyPort 按照 RFC 3986 Section 6.2.3 的规定移除 ":port" 中空的 port，将其变为 ""
 func removeEmptyPort(host string) string {
 	if hasPort(host) {
 		return strings.TrimSuffix(host, ":")

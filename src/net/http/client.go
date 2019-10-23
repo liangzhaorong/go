@@ -70,6 +70,7 @@ type Client struct {
 	// Transport specifies the mechanism by which individual
 	// HTTP requests are made.
 	// If nil, DefaultTransport is used.
+	//
 	// Transport 指定发出单个 HTTP 请求的机制。如果为 nil，则使用 DefaultTransport
 	Transport RoundTripper
 
@@ -84,6 +85,7 @@ type Client struct {
 	// As a special case, if CheckRedirect returns ErrUseLastResponse,
 	// then the most recent response is returned with its body
 	// unclosed, along with a nil error.
+	//
 	// CheckRedirect 指定用于处理重定向的策略。如果 CheckRedirect 不为 nil，
 	// 则客户端将在遵循 HTTP 重定向之前调用它。参数 req 和 via 是即将到来的
 	// 请求和已发出的请求，oldest first。如果 CheckRedirect 返回错误，则客户端
@@ -115,6 +117,7 @@ type Client struct {
 	// redirects, and reading the response body. The timer remains
 	// running after Get, Head, Post, or Do return and will
 	// interrupt reading of the Response.Body.
+	//
 	// Timeout 为该客户端发出的请求指定了时间限制。该 timeout 包含连接
 	// 时间，任意重定向，以及读取响应正文。在 Get，Head，Post 或 Do 返回
 	// 之后，timer 保持运行，并且将中断 Response.Body 的读取。

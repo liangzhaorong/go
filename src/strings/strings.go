@@ -759,6 +759,8 @@ func TrimFunc(s string, f func(rune) bool) string {
 
 // IndexFunc returns the index into s of the first Unicode
 // code point satisfying f(c), or -1 if none do.
+//
+// IndexFunc 返回 s 中第一个 Unicode 码点满足 f(c) 的索引值，如果没有则返回 -1
 func IndexFunc(s string, f func(rune) bool) int {
 	return indexFunc(s, f, true)
 }
@@ -772,6 +774,8 @@ func LastIndexFunc(s string, f func(rune) bool) int {
 // indexFunc is the same as IndexFunc except that if
 // truth==false, the sense of the predicate function is
 // inverted.
+//
+// indexFunc 与 IndexFunc 相同，不同之处在于如果 true==false，则函数的含义相反。
 func indexFunc(s string, f func(rune) bool, truth bool) int {
 	for i, r := range s {
 		if f(r) == truth {

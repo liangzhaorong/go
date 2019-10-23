@@ -6,6 +6,7 @@
 //
 // This is the low-level Transport implementation of RoundTripper.
 // The high-level interface is in client.go.
+//
 // 这是 RoundTripper 的底层 Transport 实现。
 // 上层接口在 client.go 中
 
@@ -43,7 +44,7 @@ import (
 // $no_proxy) environment variables.
 //
 // DefaultTransport 是 Transport 的默认实现，由 DefaultClient 使用。
-// 它根据需要建立网络连接，并缓存它们以供后续调用重用。它按照 $HTTP_PROXY 和
+// 它根据需要建立网络连接，并缓存它们以供后续调用复用。它按照 $HTTP_PROXY 和
 // $NO_PROXY（或 $http_proxy 和 $no_proxy）环境变量的指示使用 HTTP 代理。
 var DefaultTransport RoundTripper = &Transport{
 	Proxy: ProxyFromEnvironment,
@@ -130,8 +131,8 @@ const DefaultMaxIdleConnsPerHost = 2
 // 则将请求视为幂等，但头部不会被发送出去。
 type Transport struct {
 	idleMu       sync.Mutex
-	closeIdle    bool                                // user has requested to close all idle conns
-	idleConn     map[connectMethodKey][]*persistConn // most recently used at end
+	closeIdle    bool                                // user has requested to close all idle conns(用户已请求关闭所有空闲的连接)
+	idleConn     map[connectMethodKey][]*persistConn // most recently used at end（最近使用完）
 	idleConnWait map[connectMethodKey]wantConnQueue  // waiting getConns
 	idleLRU      connLRU
 
@@ -258,15 +259,17 @@ type Transport struct {
 	// decoded in the Response.Body. However, if the user
 	// explicitly requested gzip it is not automatically
 	// uncompressed.
+	//
 	// DisableCompression（如果为 true），则当请求不包含 Accept-Encoding
 	// 值时，防止 Transport 使用 "Accept-Encoding: gzip" 请求头来请求压缩。
 	// 如果 Transport 本身请求 gzip 并获得 gzip 压缩的响应，则会在
-	// Response.Body 中透明地解码。然后，如果用户明确请求 gzip，则不会自动将其
+	// Response.Body 中透明地解码。但是，如果用户明确请求 gzip，则不会自动将其
 	// 解压缩。
 	DisableCompression bool
 
 	// MaxIdleConns controls the maximum number of idle (keep-alive)
 	// connections across all hosts. Zero means no limit.
+	//
 	// MaxIdleConns 控制所有主机之间的最大空闲（keep-alive）连接数。
 	// 0 表示没有限制。
 	MaxIdleConns int
@@ -274,6 +277,7 @@ type Transport struct {
 	// MaxIdleConnsPerHost, if non-zero, controls the maximum idle
 	// (keep-alive) connections to keep per-host. If zero,
 	// DefaultMaxIdleConnsPerHost is used.
+	//
 	// MaxIdleConnsPerHost（如果非 0）控制与每个主机保持空闲连接的最大
 	// 连接数。如果为 0，则使用 DefaultMaxIdleConnsPerHost。
 	MaxIdleConnsPerHost int
@@ -281,10 +285,12 @@ type Transport struct {
 	// MaxConnsPerHost optionally limits the total number of
 	// connections per host, including connections in the dialing,
 	// active, and idle states. On limit violation, dials will block.
+	//
+	// Zero means no limit.
+	//
 	// MaxConnsPerHost 可选地限制与每个主机的总连接数，包含拨号中的活动连接，
 	// 以及空闲状态下的连接。超出限制时，拨号将阻塞。
 	//
-	// Zero means no limit.
 	// 0 表示没有限制。
 	MaxConnsPerHost int
 
@@ -292,6 +298,7 @@ type Transport struct {
 	// (keep-alive) connection will remain idle before closing
 	// itself.
 	// Zero means no limit.
+	//
 	// IdleConnTimeout 是空闲（keep-alive）连接在关闭自身之前将保持
 	// 空闲状态的最长时间。
 	// 0 表示没有限制。
@@ -301,6 +308,7 @@ type Transport struct {
 	// time to wait for a server's response headers after fully
 	// writing the request (including its body, if any). This
 	// time does not include the time to read the response body.
+	//
 	// ResponseHeaderTimeout（如果非 0）指定在完全写入（即发送）请求（包括其 body）
 	// 之后等待服务器的响应头时间。该时间不包括读取响应 body 的时间。
 	ResponseHeaderTimeout time.Duration
@@ -312,6 +320,11 @@ type Transport struct {
 	// causes the body to be sent immediately, without
 	// waiting for the server to approve.
 	// This time does not include the time to send the request header.
+	//
+	// ExpectContinueTimeout（如果非零）指定如果请求带有 "Expect: 100-continue" 头，
+	// 则在完全写入请求头之后等待服务器的第一个响应头的时间。 零表示没有超时，并导致正文
+	// body 立即发送，而无需等待服务器批准。
+	// 此时间不包括发送请求头的时间。
 	ExpectContinueTimeout time.Duration
 
 	// TLSNextProto specifies how the Transport switches to an
@@ -324,13 +337,18 @@ type Transport struct {
 	// must return a RoundTripper that then handles the request.
 	// If TLSNextProto is not nil, HTTP/2 support is not enabled
 	// automatically.
+	//
 	// TLSNextProto 指定在 TLS ALPN 协议协商之后如何切换到备用协议（如 HTTP/2）。
 	// 如果 Transport 使用非空协议名称发起 TLS 连接，并且 TLSNextProto 包含
-	// 该键（如 "h2"）的映射项，
+	// 该键（如 "h2"）的映射项，则将以请求的权限（如 "example.com" 或 "example.com:1234"）
+	// 和 TLS 连接。该函数必须返回 RoundTripper，然后再处理请求。如果
+	// TLSNextProto 非 nil，则不会自动启用 HTTP/2 支持。
 	TLSNextProto map[string]func(authority string, c *tls.Conn) RoundTripper
 
 	// ProxyConnectHeader optionally specifies headers to send to
 	// proxies during CONNECT requests.
+	//
+	// ProxyConnectHeader 可以选择指定在 CONNECT 请求期间发送给代理的头部。
 	ProxyConnectHeader Header
 
 	// MaxResponseHeaderBytes specifies a limit on how many
@@ -346,6 +364,7 @@ type Transport struct {
 	// WriteBufferSize specifies the size of the write buffer used
 	// when writing to the transport.
 	// If zero, a default (currently 4KB) is used.
+	//
 	// WriteBufferSize 指定在写入到传输时使用的写缓冲区大小。
 	// 如果为 0，默认使用 4KB。
 	WriteBufferSize int
@@ -353,12 +372,14 @@ type Transport struct {
 	// ReadBufferSize specifies the size of the read buffer used
 	// when reading from the transport.
 	// If zero, a default (currently 4KB) is used.
+	//
 	// ReadBufferSize 指定在从传输中读取时使用的读缓冲区大小。
 	// 如果为 0，默认使用 4KB。
 	ReadBufferSize int
 
 	// nextProtoOnce guards initialization of TLSNextProto and
 	// h2transport (via onceSetNextProtoDefaults)
+	//
 	// nextProtoOnce 防止 TLSNextProto 和 h2transport 的初始化（通过 onceSetNextProtoDefaults）
 	nextProtoOnce      sync.Once
 	h2transport        h2Transport // non-nil if http2 wired up
@@ -369,6 +390,11 @@ type Transport struct {
 	// By default, use of any those fields conservatively disables HTTP/2.
 	// To use a custom dialer or TLS config and still attempt HTTP/2
 	// upgrades, set this to true.
+	//
+	// 当提供非零 Dial，DialTLS 或 DialContext 函数或 TLSClientConfig 时，
+	// ForceAttemptHTTP2 控制是否启用 HTTP/2。 默认情况下，保守地使用这些字段
+	// 会禁用 HTTP/2。 要使用自定义 dialer 或 TLS 配置并仍尝试 HTTP/2 upgrades，
+	// 请将其设置为 true。
 	ForceAttemptHTTP2 bool
 }
 

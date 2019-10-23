@@ -104,6 +104,11 @@ var reqWriteExcludeHeader = map[string]bool{
 // The field semantics differ slightly between client and server
 // usage. In addition to the notes on the fields below, see the
 // documentation for Request.Write and RoundTripper.
+//
+// Request 表示服务器接收或客户端发送的 HTTP 请求。
+//
+// 客户端和服务器使用情况之间的字段语义略有不同。 除了以下字段上的注释外，
+// 请参阅 Request.Write 和 RoundTripper 的文档。
 type Request struct {
 	// Method specifies the HTTP method (GET, POST, PUT, etc.).
 	// For client requests, an empty string means GET.
@@ -111,6 +116,12 @@ type Request struct {
 	// Go's HTTP client does not support sending a request with
 	// the CONNECT method. See the documentation on Transport for
 	// details.
+	//
+	// Method 指定 HTTP 方法（GET, POST, PUT 等）
+	// 对于客户端请求，空的字符串意味使用 GET。
+	//
+	// Go 的 HTTP 客户端不支持发送 CONNECT 方法的请求。更多信息参见
+	// Transport 文档
 	Method string
 
 	// URL specifies either the URI being requested (for server
@@ -125,6 +136,14 @@ type Request struct {
 	// connect to, while the Request's Host field optionally
 	// specifies the Host header value to send in the HTTP
 	// request.
+	//
+	// URL 指定接受请求的 URI（对于服务器请求）或要访问的 URL（对于客户端请求）。
+	//
+	// 对于服务器请求，将从存储在 RequestURI 中的请求行上提供的 URI 解析 URL。
+	// 对于大多数请求，Path 和 RawQuery 以外的其他字段将为空。 （请参阅RFC 7230，第5.3节）
+	//
+	// 对于客户端请求，URL 的 Host 指定要连接的服务器，而 Request 的 Host 字段
+	// 则可选地指定要在 HTTP 请求中发送的 Host 头部值。
 	URL *url.URL
 
 	// The protocol version for incoming server requests.
@@ -132,6 +151,11 @@ type Request struct {
 	// For client requests, these fields are ignored. The HTTP
 	// client code always uses either HTTP/1.1 or HTTP/2.
 	// See the docs on Transport for details.
+	//
+	// 传入服务器请求的协议版本。
+	//
+	// 对于客户端请求，将忽略这些字段。 HTTP 客户端代码总是使用 HTTP/1.1 或
+	// HTTP/2。更多信息参见 Transport。
 	Proto      string // "HTTP/1.0"
 	ProtoMajor int    // 1
 	ProtoMinor int    // 0
@@ -167,6 +191,32 @@ type Request struct {
 	// and Connection are automatically written when needed and
 	// values in Header may be ignored. See the documentation
 	// for the Request.Write method.
+	//
+	// Header 包含服务器接收的或客户端发送的请求头字段。
+	//
+	// 如果服务器接收到带有头部的请求:
+	//
+	//	Host: example.com
+	//	accept-encoding: gzip, deflate
+	//	Accept-Language: en-us
+	//	fOO: Bar
+	//	foo: two
+	//
+	// 那么
+	//
+	//	Header = map[string][]string{
+	//		"Accept-Encoding": {"gzip, deflate"},
+	//		"Accept-Language": {"en-us"},
+	//		"Foo": {"Bar", "two"},
+	//	}
+	//
+	// 对于传入的请求（即服务器方），Host 头部被提升为 Request.Host 字段，并从 Header 映射中删除。
+	//
+	// HTTP 定义头部名称不区分大小写。 请求解析器通过使用 CanonicalHeaderKey 来实现此目的，
+	// 使第一个字符和连字符后的任何字符都大写，其余的都小写。
+	//
+	// 对于客户端请求，某些头部（例如 Content-Length 和 Connection）会在需要时自动写入，
+	// 并且头部中的值可能会被忽略。 请参阅文档中的 Request.Write 方法。
 	Header Header
 
 	// Body is the request's body.
@@ -179,6 +229,15 @@ type Request struct {
 	// but will return EOF immediately when no body is present.
 	// The Server will close the request body. The ServeHTTP
 	// Handler does not need to.
+	//
+	// Body 是请求的正文。
+	//
+	// 对于客户端请求，nil body 意味着该请求没有正文，如 GET 请求。
+	// HTTP Client 的 Transport 负责调用 Close 方法。
+	//
+	// 对于服务器请求，Request 的 Body 始终为非 nil，但在不存在 body
+	// 时立即返回 EOF。Server 将关闭请求正文。ServeHTTP Handler 不需要
+	// 这么做。
 	Body io.ReadCloser
 
 	// GetBody defines an optional func to return a new copy of
@@ -187,6 +246,9 @@ type Request struct {
 	// requires setting Body.
 	//
 	// For server requests, it is unused.
+	//
+	// GetBody 定义了一个可选的 func 来返回 Body 的副本。当重定向需要多次
+	// 读取正文时，
 	GetBody func() (io.ReadCloser, error)
 
 	// ContentLength records the length of the associated content.
@@ -818,13 +880,15 @@ func NewRequest(method, url string, body io.Reader) (*Request, error) {
 
 // NewRequestWithContext returns a new Request given a method, URL, and
 // optional body.
+//
 // NewRequestWithContext 返回一个具有给定方法，URL，以及可选 body 的新 Request。
 //
 // If the provided body is also an io.Closer, the returned
 // Request.Body is set to body and will be closed by the Client
 // methods Do, Post, and PostForm, and Transport.RoundTrip.
+//
 // 如果提供的 body 也是 io.Closer，那么返回的 Request.Body 即为设置为 body，
-// 并且将通过 Client 方法 Do，Post 和 PostForm，以及 Transport.RoundTrip 关闭。
+// 并且将通过 Client 方法的 Do，Post 和 PostForm，以及 Transport.RoundTrip 关闭。
 //
 // NewRequestWithContext returns a Request suitable for use with
 // Client.Do or Transport.RoundTrip. To create a request for use with
@@ -835,6 +899,7 @@ func NewRequest(method, url string, body io.Reader) (*Request, error) {
 // obtaining a connection, sending the request, and reading the
 // response headers and body. See the Request type's documentation for
 // the difference between inbound and outbound request fields.
+//
 // NewRequestWithContext 返回适合与 Client.Do 或 Transport.RoundTrip 一起使用的请求。
 // 若要创建用于测试服务器处理程序的请求，请使用 net/http/httptest 包中的 NewRequest 函数，
 // 使用 ReadRequest，或手动更新 Request 字段。对于传出的客户端请求，context 控制请求的整个
@@ -846,9 +911,10 @@ func NewRequest(method, url string, body io.Reader) (*Request, error) {
 // exact value (instead of -1), GetBody is populated (so 307 and 308
 // redirects can replay the body), and Body is set to NoBody if the
 // ContentLength is 0.
+//
 // 如果 body 的类型为 *bytes.Buffer，*bytes.Reader，或者 *strings.Reader，则返回
 // 的请求的 ContentLength 将设置为确切的值（而不是 -1），将填充 GetBody（因此 307
-// 和 308 重定向可以重播 body），如果 ContentLength 为 0，则将 Body 设置为 BoBody。
+// 和 308 重定向可以重播 body），如果 ContentLength 为 0，则将 Body 设置为 NoBody
 func NewRequestWithContext(ctx context.Context, method, url string, body io.Reader) (*Request, error) {
 	if method == "" {
 		// We document that "" means "GET" for Request.Method, and people have
@@ -868,9 +934,11 @@ func NewRequestWithContext(ctx context.Context, method, url string, body io.Read
 	}
 	rc, ok := body.(io.ReadCloser)
 	if !ok && body != nil {
+		// 返回无 Close() 方法的 io.ReadCloser
 		rc = ioutil.NopCloser(body)
 	}
 	// The host's colon:port should be normalized. See Issue 14836.
+	// 若 host 为 "host:"，即表示没有 port，则移除 ":"
 	u.Host = removeEmptyPort(u.Host)
 	req := &Request{
 		ctx:        ctx,

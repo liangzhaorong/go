@@ -2122,6 +2122,9 @@ func Redirect(w ResponseWriter, r *Request, url string, code int) {
 
 // parseURL is just url.Parse. It exists only so that url.Parse can be called
 // in places where url is shadowed for godoc. See https://golang.org/cl/49930.
+//
+// parseURL 即为 url.Parse。 它仅存在，以便 url.Parse 可以在为 godoc 遮盖了 url 的地方
+// 调用。 参见 https://golang.org/cl/49930。
 var parseURL = url.Parse
 
 var htmlReplacer = strings.NewReplacer(

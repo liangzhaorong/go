@@ -112,6 +112,8 @@ func (nopCloser) Close() error { return nil }
 
 // NopCloser returns a ReadCloser with a no-op Close method wrapping
 // the provided Reader r.
+//
+// NopCloser 返回带有无操作 Close 方法的 ReadCloser，该方法包装提供的 Reader r。
 func NopCloser(r io.Reader) io.ReadCloser {
 	return nopCloser{r}
 }
