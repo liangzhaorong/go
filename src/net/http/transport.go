@@ -458,6 +458,9 @@ type h2Transport interface {
 
 // onceSetNextProtoDefaults initializes TLSNextProto.
 // It must be called via t.nextProtoOnce.Do.
+//
+// onceSetNextProtoDefaults 初始化 TLSNextProto。
+// 该函数必须通过 t.nextProtoOnce.Do 调用。
 func (t *Transport) onceSetNextProtoDefaults() {
 	t.tlsNextProtoWasNil = (t.TLSNextProto == nil)
 	if strings.Contains(os.Getenv("GODEBUG"), "http2client=0") {
@@ -585,6 +588,8 @@ func (t *Transport) useRegisteredProtocol(req *Request) bool {
 }
 
 // roundTrip implements a RoundTripper over HTTP.
+//
+// roundTrip 通过 HTTP 实现 RoundTripper
 func (t *Transport) roundTrip(req *Request) (*Response, error) {
 	t.nextProtoOnce.Do(t.onceSetNextProtoDefaults)
 	ctx := req.Context()

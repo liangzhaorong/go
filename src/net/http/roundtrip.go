@@ -13,6 +13,12 @@ package http
 //
 // Like the RoundTripper interface, the error types returned
 // by RoundTrip are unspecified.
+//
+// RoundTrip 实现 RoundTripper 接口。
+//
+// 有关更高级别的 HTTP 客户端支持（例如 cookie 和重定向的处理），请参阅 Get，Post 和 Client 类型。
+//
+// 与 RoundTripper 接口类似，RoundTrip 返回的错误类型未指定。
 func (t *Transport) RoundTrip(req *Request) (*Response, error) {
 	return t.roundTrip(req)
 }

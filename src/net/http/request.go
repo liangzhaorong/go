@@ -355,8 +355,8 @@ type Request struct {
 	// This field is only available after ParseMultipartForm is called.
 	// The HTTP client ignores MultipartForm and uses Body instead.
 	//
-	// MultipartForm 是已解析的多部分表单，包括文件上传。 仅在调用 
-	// ParseMultipartForm 之后，此字段才可用。 HTTP 客户端会忽略 
+	// MultipartForm 是已解析的多部分表单，包括文件上传。 仅在调用
+	// ParseMultipartForm 之后，此字段才可用。 HTTP 客户端会忽略
 	// MultipartForm 并改用Body。
 	MultipartForm *multipart.Form
 
@@ -403,8 +403,8 @@ type Request struct {
 	// This field is ignored by the HTTP client.
 	//
 	// RemoteAddr 允许 HTTP 服务器和其他软件记录发送请求的网络地址，
-	// 通常用于日志。ReadRequest 不会填写此字段，并且没有定义的格式。 
-	// 在调用 handler 之前，此程序包中的 HTTP 服务器将 RemoteAddr 
+	// 通常用于日志。ReadRequest 不会填写此字段，并且没有定义的格式。
+	// 在调用 handler 之前，此程序包中的 HTTP 服务器将 RemoteAddr
 	// 设置为 "IP:port" 地址。
 	RemoteAddr string
 
@@ -427,7 +427,7 @@ type Request struct {
 	// This field is ignored by the HTTP client.
 	//
 	// TLS 允许 HTTP 服务器和其他软件记录有关在其上接收到请求的
-	// TLS 连接的信息。 ReadRequest 不会填写此字段。 此程序包中的 
+	// TLS 连接的信息。 ReadRequest 不会填写此字段。 此程序包中的
 	// HTTP 服务器在调用 handler 之前为启用 TLS 的连接设置该字段。
 	// 否则，该字段将为零。
 	// HTTP 客户端忽略该字段。
@@ -443,7 +443,7 @@ type Request struct {
 	// instead. If a Request's Cancel field and context are both
 	// set, it is undefined whether Cancel is respected.
 	//
-	// Cancel 是一个可选 channel，其关闭指示客户请求应被视为已取消。 
+	// Cancel 是一个可选 channel，其关闭指示客户请求应被视为已取消。
 	// 并非 RoundTripper 的所有实现都支持 Cancel。
 	//
 	// 对于服务器请求，此字段不适用。
@@ -466,7 +466,7 @@ type Request struct {
 	// and mutating the contexts held by callers of the same request.
 	//
 	// ctx 是客户端上下文或服务器上下文。 只能通过使用 WithContext 复制
-	// 整个 Request 来修改它。它不会导出，以防止人们错误使用 Context 
+	// 整个 Request 来修改它。它不会导出，以防止人们错误使用 Context
 	// 并更改由同一请求的调用者持有的上下文。
 	ctx context.Context
 }
@@ -482,6 +482,15 @@ type Request struct {
 // For incoming server requests, the context is canceled when the
 // client's connection closes, the request is canceled (with HTTP/2),
 // or when the ServeHTTP method returns.
+//
+// Context 返回请求的上下文。要更改 context，请使用 WithContext.
+//
+// 返回的 context 总是为非 nil，默认为 background context。
+//
+// 对于传出客户端请求，context 控制 取消（cancellation）
+//
+// 对于传入的服务端请求，当客户端的连接关闭，请求被取消（使用 HTTP/2），
+// 或者当 ServeHTTP 方法返回时，context 被取消。
 func (r *Request) Context() context.Context {
 	if r.ctx != nil {
 		return r.ctx
@@ -579,6 +588,10 @@ func (r *Request) Cookie(name string) (*Cookie, error) {
 // AddCookie does not attach more than one Cookie header field. That
 // means all cookies, if any, are written into the same line,
 // separated by semicolon.
+//
+// AddCookie 将 cookie 添加到请求中。 根据 RFC 6265 第 5.4 节，AddCookie
+// 不会附加多个 Cookie 头部字段。 这意味着所有 cookie（如果有的话）都写在同一行中，
+// 并用分号分隔。
 func (r *Request) AddCookie(c *Cookie) {
 	s := fmt.Sprintf("%s=%s", sanitizeCookieName(c.Name), sanitizeCookieValue(c.Value))
 	if c := r.Header.Get("Cookie"); c != "" {
@@ -1085,7 +1098,7 @@ func NewRequestWithContext(ctx context.Context, method, url string, body io.Read
 		// 对于客户端请求，Request.ContentLength 为 0 表示实际上为
 		// 0 或未知。明确表示 ContentLength 的唯一方法是设置 Body
 		// 为 nil。但是事实证明，太多代码依赖于 NewRequest 返回一个
-		// 非 nil 的 Body，因此我们改用一个众所周知的 ReadCloser 
+		// 非 nil 的 Body，因此我们改用一个众所周知的 ReadCloser
 		// 变量，并且让 http 包也将该哨兵（sentinel）变量视为显式地
 		// 表示 0.
 		if req.GetBody != nil && req.ContentLength == 0 {

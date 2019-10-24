@@ -217,6 +217,8 @@ func refererForURL(lastReq, newReq *url.URL) string {
 }
 
 // didTimeout is non-nil only if err != nil.
+//
+// 仅当 err != nil 时，didTimeout 才为非 nil
 func (c *Client) send(req *Request, deadline time.Time) (resp *Response, didTimeout func() bool, err error) {
 	if c.Jar != nil {
 		for _, cookie := range c.Jar.Cookies(req.URL) {
@@ -242,6 +244,7 @@ func (c *Client) deadline() time.Time {
 	return time.Time{}
 }
 
+// 若用户没有自定义 Transport，则使用默认 DefaultTransport
 func (c *Client) transport() RoundTripper {
 	if c.Transport != nil {
 		return c.Transport
@@ -251,8 +254,11 @@ func (c *Client) transport() RoundTripper {
 
 // send issues an HTTP request.
 // Caller should close resp.Body when done reading from it.
+//
+// send 发起一个 HTTP 请求。
+// 当调用者读取完服务器响应时，应关闭 resp.Body
 func send(ireq *Request, rt RoundTripper, deadline time.Time) (resp *Response, didTimeout func() bool, err error) {
-	req := ireq // req is either the original request, or a modified fork
+	req := ireq // req is either the original request, or a modified fork（req 是原始请求或修改后的 fork）
 
 	if rt == nil {
 		req.closeBody()
@@ -271,6 +277,7 @@ func send(ireq *Request, rt RoundTripper, deadline time.Time) (resp *Response, d
 
 	// forkReq forks req into a shallow clone of ireq the first
 	// time it's called.
+	// forkReq 会在第一次调用 ireq 时将 req fork 到 ireq 的浅克隆中
 	forkReq := func() {
 		if ireq == req {
 			req = new(Request)
@@ -281,6 +288,9 @@ func send(ireq *Request, rt RoundTripper, deadline time.Time) (resp *Response, d
 	// Most the callers of send (Get, Post, et al) don't need
 	// Headers, leaving it uninitialized. We guarantee to the
 	// Transport that this has been initialized, though.
+	//
+	// 大多数 send 的调用者（Get，Post 等）不需要 Header，而无需初始化。
+	// 我们向 Transport 保证已将其初始化.
 	if req.Header == nil {
 		forkReq()
 		req.Header = make(Header)
@@ -290,7 +300,7 @@ func send(ireq *Request, rt RoundTripper, deadline time.Time) (resp *Response, d
 		username := u.Username()
 		password, _ := u.Password()
 		forkReq()
-		req.Header = cloneOrMakeHeader(ireq.Header)
+		req.Header = cloneOrMakeHeader(ireq.Header) // 返回原始头部的副本
 		req.Header.Set("Authorization", "Basic "+basicAuth(username, password))
 	}
 
@@ -328,6 +338,9 @@ func send(ireq *Request, rt RoundTripper, deadline time.Time) (resp *Response, d
 // timeBeforeContextDeadline reports whether the non-zero Time t is
 // before ctx's deadline, if any. If ctx does not have a deadline, it
 // always reports true (the deadline is considered infinite).
+//
+// timeBeforeContextDeadline 报告非零时间 t 是否在 ctx 截止日期之前（如果有）。
+// 如果 ctx 没有截止日期，则它始终报告为 true（该截止日期被认为是无限的）。
 func timeBeforeContextDeadline(t time.Time, ctx context.Context) bool {
 	d, ok := ctx.Deadline()
 	if !ok {
@@ -339,6 +352,9 @@ func timeBeforeContextDeadline(t time.Time, ctx context.Context) bool {
 // knownRoundTripperImpl reports whether rt is a RoundTripper that's
 // maintained by the Go team and known to implement the latest
 // optional semantics (notably contexts).
+//
+// knownRoundTripperImpl 报告 rt 是否是 Go 团队维护的 RoundTripper，
+// 并且已知可以实现最新的可选语义（尤其是上下文）。
 func knownRoundTripperImpl(rt RoundTripper) bool {
 	switch rt.(type) {
 	case *Transport, *http2Transport:
@@ -365,6 +381,15 @@ func knownRoundTripperImpl(rt RoundTripper) bool {
 // Second was Request.Cancel.
 // Third was Request.Context.
 // This function populates the second and third, and uses the first if it really needs to.
+//
+// setRequestCancel 设置 req.Cancel，如果 deadline 不为零，则将 deadline 上下文添加到 req。
+// RoundTripper 的类型用于确定是否应使用传统的 CancelRequest 行为。
+//
+// 作为 background，有三种取消请求的方法:
+//   - 首先是 Transport.CancelRequest。 （已弃用）
+//   - 其次是 Request.Cancel。
+//   - 第三是 Request.Context。
+// 此函数设置第二个和第三个，如果确实需要，则使用第一个
 func setRequestCancel(req *Request, rt RoundTripper, deadline time.Time) (stopTimer func(), didTimeout func() bool) {
 	if deadline.IsZero() {
 		return nop, alwaysFalse
@@ -375,6 +400,7 @@ func setRequestCancel(req *Request, rt RoundTripper, deadline time.Time) (stopTi
 	if req.Cancel == nil && knownTransport {
 		// If they already had a Request.Context that's
 		// expiring sooner, do nothing:
+		// 如果拥有一个快要过期的 Request.Context，则什么也不做
 		if !timeBeforeContextDeadline(deadline, oldCtx) {
 			return nop, alwaysFalse
 		}
@@ -607,7 +633,7 @@ func urlErrorOp(method string) string {
 // value's Timeout method will report true if request timed out or was
 // canceled.
 //
-// Do 根据 Client 上配置的策略（例如重定向，Cookie，身份验证）发送 
+// Do 根据 Client 上配置的策略（例如重定向，Cookie，身份验证）发送
 // HTTP 请求并返回 HTTP 响应。
 //
 // 如果是由 client 策略（例如 CheckRedirect）或无法发送 HTTP（例如
@@ -615,7 +641,7 @@ func urlErrorOp(method string) string {
 //
 // 如果返回的错误为 nil，则 Response 将包含一个非 nil 的 Body，希望
 // 用户将其关闭。如果未同时将 Body 读取到 EOF 并关闭，则 Client 的底层
-// 的 RoundTripper（通常是 Transport）可能无法将与服务器的持久 TCP 
+// 的 RoundTripper（通常是 Transport）可能无法将与服务器的持久 TCP
 // 连接重新用于后续的 "keep-alive" 请求。
 //
 // 请求 Body（如果非 nil）将被底层的 Transport 关闭，即使发生错误也是如此。
@@ -626,9 +652,9 @@ func urlErrorOp(method string) string {
 // 通常，将使用 Get，Post 或 PostForm 代替 Do。
 //
 // 如果服务器回复重定向，则 Client 首先使用 CheckRedirect 函数来确定是否
-// 应遵循重定向。 如果允许，则 301、302 或 303 重定向会导致后续请求使用 
+// 应遵循重定向。 如果允许，则 301、302 或 303 重定向会导致后续请求使用
 // HTTP 方法 GET（如果原始请求为 HEAD，则为 HEAD），而没有正文。 如果定义了
-// Request.GetBody 函数，则 307 或 308 重定向将保留原始的 HTTP 方法和 body。 
+// Request.GetBody 函数，则 307 或 308 重定向将保留原始的 HTTP 方法和 body。
 // NewRequest 函数自动为常见的标准库 body 类型设置 GetBody。
 func (c *Client) Do(req *Request) (*Response, error) {
 	return c.do(req)
@@ -653,7 +679,7 @@ func (c *Client) do(req *Request) (retres *Response, reterr error) {
 		reqs          []*Request
 		resp          *Response
 		copyHeaders   = c.makeHeadersCopier(req) // 返回一个闭包回调函数，使当出现重定向时可以复制原始的请求头
-		reqBodyClosed = false // have we closed the current req.Body?
+		reqBodyClosed = false                    // have we closed the current req.Body?
 
 		// Redirect behavior:
 		redirectMethod string
@@ -791,7 +817,7 @@ func (c *Client) do(req *Request) (retres *Response, reterr error) {
 // initial Request, ireq. For every redirect, this function must be called
 // so that it can copy headers into the upcoming Request.
 //
-// makeHeadersCopier 生成一个回调函数，该回调函数能够从初始请求 ireq 中复制头部。 
+// makeHeadersCopier 生成一个回调函数，该回调函数能够从初始请求 ireq 中复制头部。
 // 对于每个重定向，必须调用此函数，以便可以将头部复制到即将到来的 Request 中。
 func (c *Client) makeHeadersCopier(ireq *Request) func(*Request) {
 	// The headers to copy are from the very initial request.
