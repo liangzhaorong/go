@@ -30,16 +30,16 @@ const (
 )
 
 type hchan struct {
-	qcount   uint           // total data in the queue
-	dataqsiz uint           // size of the circular queue
-	buf      unsafe.Pointer // points to an array of dataqsiz elements
-	elemsize uint16
-	closed   uint32
-	elemtype *_type // element type
-	sendx    uint   // send index
-	recvx    uint   // receive index
-	recvq    waitq  // list of recv waiters
-	sendq    waitq  // list of send waiters
+	qcount   uint           // total data in the queue - 当前队列中剩余的元素个数
+	dataqsiz uint           // size of the circular queue - 环形队列长度, 即可以存放的元素个数
+	buf      unsafe.Pointer // points to an array of dataqsiz elements - 环形队列指针
+	elemsize uint16         // 每个元素的大小
+	closed   uint32         // 标识关闭状态
+	elemtype *_type         // element type - 元素类型
+	sendx    uint           // send index - 队列下标, 指示元素写入时存放到队列中的位置
+	recvx    uint           // receive index- 队列下标, 指示元素从队列的该位置读出
+	recvq    waitq          // list of recv waiters - 等待读消息的 goroutine 队列
+	sendq    waitq          // list of send waiters - 等待写消息的 goroutine 队列
 
 	// lock protects all fields in hchan, as well as several
 	// fields in sudogs blocked on this channel.
@@ -47,7 +47,7 @@ type hchan struct {
 	// Do not change another G's status while holding this lock
 	// (in particular, do not ready a G), as this can deadlock
 	// with stack shrinking.
-	lock mutex
+	lock mutex // 互斥锁, chan 不允许并发读写
 }
 
 type waitq struct {
