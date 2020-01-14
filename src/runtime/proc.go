@@ -79,6 +79,52 @@ var modinfo string
 // sloppy about thread unparking when submitting to global queue. Also see comments
 // for nmspinning manipulation.
 
+// 调度器的工作原理是将准备好的 goroutine 分散到工作线程中执行.
+// 主要概念:
+// - G: goroutine
+// - M: 工作线程
+// - P: 处理器, 执行 go 代码的上下文, M 必须绑定到一个 P 才能执行 go 代码
+//
+// 设计文档：https://golang.org/s/go11sched
+
+// 工作线程的 parking/unparking
+// 我们需要在保持足够的运行 worker thread 来利用有效硬件并发资源, 和 park 运行过多的 worker thread
+// 来节约 CPU 能耗之间进行权衡. 这个权衡并不简单, 有以下两点原因:
+// 1. 调度器状态是有意分布的(具体而言, 是一个 per-P 的 work 队列), 因此在快速路径(fast path) 计算出
+//    全局谓词(global predicate) 是不可能的.
+// 2. 为了获得最佳的线程管理, 我们必须知道未来的情况(当一个新的 goroutine 会在不久的将来 ready, 不再
+//    park 一个 worker thread)
+//
+// 这三种被驳回的方法很糟糕:
+// 1. 集中式管理所有调度器状态(将会限制可扩展行)
+// 2. 直接切换 goroutine. 也就是说, 当我们 ready 一个新的 goroutine 时, 让出一个 P, unpark 一个线程
+//    并切换到这个线程运行 goroutine. 因为 ready 的 goroutine 线程可能在下一个瞬间 out of work, 从而
+//    导致线程 trashing (当计算机虚拟内存饱和时会发生 trashing, 最终导致分页调度状态不再变化. 这个状态
+//    会一直持续, 直到用户关闭一些运行的应用或者活跃进程释放一些虚拟内存资源), 因此我们需要 park 这个线程.
+//    同样, 我们希望在相同的线程内维护 goroutine, 这种方式还会摧毁计算的局部性原理.
+// 3. 任何时候 ready 一个 goroutine 时也存在一个空闲的 P 时, 都 unpark 一个额外的线程, 但不进行切换.
+//    因为额外线程会在没有检查任何 work 的情况下立即 park, 最终导致大量线程 parking/unparking.
+
+// 目前方法:
+// 如果存在一个空闲的 P 并且没有 spining 状态的工作线程, 当 ready 一个 goroutine 时, 就 unpark 一个额外
+// 的线程. 如果一个工作线程的本地队列没有 work, 且在全局运行队列或 netpoller 中也没有 work, 则称一个工作
+// 线程为 spining thread; spining 状态由 sched.nmspining 和 m.spining 表示.
+// 这种方式下被 unpark 的线程同样也成为 spining, 我们不对这种线程进行 goroutine 切换, 因此这类线程最初就是
+// out of work. spining 线程会在 park 前, 从 per-P 中运行队列中寻找 work. 如果一个 spining 进程发现 work,
+// 就会将自身切换出 spining 状态, 并且开始执行. 如果它没有发现 work 则会将自己切换出 spining 状态然后进行
+// park.
+//
+// 如果至少有一个 spining 进程(sched.nmspining > 1), 则 ready 一个 goroutine 时, 不会去 unpark 一个新的
+// 线程. 作为补偿, 如果最后一个 spining 线程发现 work 并且停止 spining, 则必须 unpark 一个新的 spining
+// 线程. 这个方法消除了不合理的线程 unpark 峰值, 且同时保持最终的最大 CPU 并行度利用率.
+//
+// 主要的实现复杂性表现为当进行 spining->non-spining 线程转换时必须非常小心. 这种转换在提交一个新的 goroutine,
+// 并且任何一个部分都需要取消另一个工作线程会发生竞争. 如果双方均失败, 则会以半静态 CPU 利用不足而结束. ready
+// 一个 goroutine 的通用范式为: 提交一个 goroutine 到 per-P 的局部 work 队列, #StoreLoad-style 内存屏障,
+// 检查 sched.nmspining. 从 spinning->non-spinning 转换的一般模式为: 减少 nmspinning, #StoreLoad-style
+// 内存屏障. 在所有 per-P 工作队列检查新的 work. 注意, 此种复杂性并不适用于全局工作队列, 因为我们不会蠢到当
+// 给一个全局队列提交 work 时进行线程 unpark. 更多细节参见 nmspinning 操作.
+
 var (
 	m0           m
 	g0           g
@@ -101,25 +147,33 @@ var main_init_done chan bool
 func main_main()
 
 // mainStarted indicates that the main M has started.
+// mainStarted 表示主 M 是否已经开始运行
 var mainStarted bool
 
 // runtimeInitTime is the nanotime() at which the runtime started.
+// runtimeInitTime 是运行时启动的 nanotime()
 var runtimeInitTime int64
 
 // Value to use for signal mask for newly created M's.
+// initSigmask 用于新创建的 M 的信号掩码 signal mask 的值
 var initSigmask sigset
 
-// The main goroutine.
+// The main goroutine. -- 主 goroutine
 func main() {
 	g := getg()
 
 	// Racectx of m0->g0 is used only as the parent of the main goroutine.
 	// It must not be used for anything else.
+	//
+	// race 检测有关, 不关心
 	g.m.g0.racectx = 0
 
 	// Max stack size is 1 GB on 64-bit, 250 MB on 32-bit.
 	// Using decimal instead of binary GB and MB because
 	// they look nicer in the stack overflow failure message.
+	//
+	// 执行栈最大限制: 1GB(64 位系统) 或者 250MB(32 位系统)
+	// 这里使用十进制而非二进制的 GB 和 MB, 是因为在栈溢出失败消息中好看一些
 	if sys.PtrSize == 8 {
 		maxstacksize = 1000000000
 	} else {
@@ -127,9 +181,13 @@ func main() {
 	}
 
 	// Allow newproc to start new Ms.
+	//
+	// 允许 newproc 启动新的 M
 	mainStarted = true
 
+	// 1.11 新引入的 web assembly, 目前 wasm 不支持线程, 无系统监控
 	if GOARCH != "wasm" { // no threads on wasm yet, so no sysmon
+		// 启动系统后台监控(定期垃圾回收, 并发任务调度等)
 		systemstack(func() {
 			newm(sysmon, nil)
 		})
@@ -141,18 +199,26 @@ func main() {
 	// Those can arrange for main.main to run in the main thread
 	// by calling runtime.LockOSThread during initialization
 	// to preserve the lock.
+	//
+	// 将主 goroutine 锁在主 OS 线程下进行初始化工作
+	// 大部分程序并不关心这一点, 但是有一些图形库(基本上属于 cgo 调用)
+	// 会要求在主线程下进行初始化工作.
+	// 即便是在 main.main 下仍然可以通过公共方法 runtime.LockOSThread
+	// 来强制将一些特殊的需要主 OS 线程的调用锁在主 OS 线程下执行初始化
 	lockOSThread()
 
 	if g.m != &m0 {
 		throw("runtime.main not on m0")
 	}
 
-	doInit(&runtime_inittask) // must be before defer
+	// 执行 runtime.init
+	doInit(&runtime_inittask) // must be before defer -- defer 必须在此调用结束后才能使用
 	if nanotime() == 0 {
 		throw("nanotime returning zero")
 	}
 
 	// Defer unlock so that runtime.Goexit during init does the unlock too.
+	// defer unlock, 从而在 init 期间 runtime.Goexit 来 unlock
 	needUnlock := true
 	defer func() {
 		if needUnlock {
@@ -161,8 +227,10 @@ func main() {
 	}()
 
 	// Record when the world started.
+	// 记录程序的启动时间
 	runtimeInitTime = nanotime()
 
+	// 启动垃圾回收器后台操作
 	gcenable()
 
 	main_init_done = make(chan bool)
