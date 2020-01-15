@@ -13,6 +13,7 @@ import (
 
 // adjust Gobuf as if it executed a call to fn with context ctxt
 // and then did an immediate gosave.
+// 调整 Gobuf, 就好像它用上下文 ctxt 对 fn 执行了一个调用, 然后立即进行 gosave.
 func gostartcall(buf *gobuf, fn, ctxt unsafe.Pointer) {
 	sp := buf.sp
 	if sys.RegSize > sys.PtrSize {

@@ -914,6 +914,7 @@ func round2(x int32) int32 {
 //
 //go:nowritebarrierrec
 func newstack() {
+	// 获取当前 G
 	thisg := getg()
 	// TODO: double check all gp. shouldn't be getg().
 	if thisg.m.morebuf.g.ptr().stackguard0 == stackFork {
@@ -1067,6 +1068,7 @@ func nilfunc() {
 
 // adjust Gobuf as if it executed a call to fn
 // and then did an immediate gosave.
+// 调整 Gobuf, 就好像它执行了对 fn 的调用, 然后立即进行了 gosave.
 func gostartcallfn(gobuf *gobuf, fv *funcval) {
 	var fn unsafe.Pointer
 	if fv != nil {

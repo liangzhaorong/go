@@ -441,7 +441,7 @@ func timediv(v int64, div int32, rem *int32) int32 {
 //go:nosplit
 func acquirem() *m {
 	_g_ := getg()
-	_g_.m.locks++
+	_g_.m.locks++ // 禁止这时 g 的 m 被抢占因为它可以在一个局部变量中保存 p
 	return _g_.m
 }
 
@@ -451,6 +451,7 @@ func releasem(mp *m) {
 	mp.locks--
 	if mp.locks == 0 && _g_.preempt {
 		// restore the preemption request in case we've cleared it in newstack
+		// 如果我们在 newstack 中清除了抢占请求, 则恢复抢占请求
 		_g_.stackguard0 = stackPreempt
 	}
 }
