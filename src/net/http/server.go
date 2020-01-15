@@ -1760,7 +1760,7 @@ func isCommonNetReadError(err error) bool {
 func (c *conn) serve(ctx context.Context) {
 	c.remoteAddr = c.rwc.RemoteAddr().String()
 	ctx = context.WithValue(ctx, LocalAddrContextKey, c.rwc.LocalAddr())
-	defer func() {
+	defer func() { // 连接关闭相关的操作
 		if err := recover(); err != nil && err != ErrAbortHandler {
 			const size = 64 << 10
 			buf := make([]byte, size)
@@ -1814,7 +1814,7 @@ func (c *conn) serve(ctx context.Context) {
 	c.bufw = newBufioWriterSize(checkConnErrorWriter{c}, 4<<10)
 
 	for {
-		w, err := c.readRequest(ctx)
+		w, err := c.readRequest(ctx) // 读取客户端请求
 		if c.r.remain != c.server.initialReadLimitSize() {
 			// If we read any bytes off the wire, we're active.
 			c.setState(c.rwc, StateActive)
@@ -1887,6 +1887,9 @@ func (c *conn) serve(ctx context.Context) {
 		// in parallel even if their responses need to be serialized.
 		// But we're not going to implement HTTP pipelining because it
 		// was never deployed in the wild and the answer is HTTP/2.
+		//
+		// 创建 serverHandler 实例, 并调用其 ServeHTTP() 方法处理请求, 需要注意的是,
+		// 这里 serverHandler.srv 字段指向的就是 http.Server 实例
 		serverHandler{c.server}.ServeHTTP(w, w.req)
 		w.cancelCtx()
 		if c.hijacked() {
@@ -2248,14 +2251,14 @@ func stripHostPort(h string) string {
 // Most-specific (longest) pattern wins.
 func (mux *ServeMux) match(path string) (h Handler, pattern string) {
 	// Check for exact match first.
-	v, ok := mux.m[path]
+	v, ok := mux.m[path] // 如果存在精确匹配的 Handler, 则直接返回
 	if ok {
 		return v.h, v.pattern
 	}
 
 	// Check for longest valid match.  mux.es contains all patterns
 	// that end in / sorted from longest to shortest.
-	for _, e := range mux.es {
+	for _, e := range mux.es { // 查找与 path 匹配程度最高的 Handler 实例
 		if strings.HasPrefix(path, e.pattern) {
 			return e.h, e.pattern
 		}
@@ -2335,8 +2338,8 @@ func (mux *ServeMux) Handler(r *Request) (h Handler, pattern string) {
 
 	// All other requests have any port stripped and path cleaned
 	// before passing to mux.handler.
-	host := stripHostPort(r.Host)
-	path := cleanPath(r.URL.Path)
+	host := stripHostPort(r.Host) // 从请求中获取 host 信息
+	path := cleanPath(r.URL.Path) // 从请求中获取请求路径
 
 	// If the given path is /tree and its handler is not registered,
 	// redirect for /tree/.
@@ -2351,7 +2354,7 @@ func (mux *ServeMux) Handler(r *Request) (h Handler, pattern string) {
 		return RedirectHandler(url.String(), StatusMovedPermanently), pattern
 	}
 
-	return mux.handler(host, r.URL.Path)
+	return mux.handler(host, r.URL.Path) // 根据 host 信息和请求路径查找对应的 Handler 实例
 }
 
 // handler is the main implementation of Handler.
@@ -2361,10 +2364,10 @@ func (mux *ServeMux) handler(host, path string) (h Handler, pattern string) {
 	defer mux.mu.RUnlock()
 
 	// Host-specific pattern takes precedence over generic ones
-	if mux.hosts {
+	if mux.hosts { // 首先根据 host 和 path 的组合查找
 		h, pattern = mux.match(host + path)
 	}
-	if h == nil {
+	if h == nil { // 只根据 path 查找
 		h, pattern = mux.match(path)
 	}
 	if h == nil {
@@ -2376,6 +2379,7 @@ func (mux *ServeMux) handler(host, path string) (h Handler, pattern string) {
 // ServeHTTP dispatches the request to the handler whose
 // pattern most closely matches the request URL.
 func (mux *ServeMux) ServeHTTP(w ResponseWriter, r *Request) {
+	// 特殊请求路径的处理
 	if r.RequestURI == "*" {
 		if r.ProtoAtLeast(1, 1) {
 			w.Header().Set("Connection", "close")
@@ -2383,8 +2387,8 @@ func (mux *ServeMux) ServeHTTP(w ResponseWriter, r *Request) {
 		w.WriteHeader(StatusBadRequest)
 		return
 	}
-	h, _ := mux.Handler(r)
-	h.ServeHTTP(w, r)
+	h, _ := mux.Handler(r) // 根据请求路径选择对应的 Handler
+	h.ServeHTTP(w, r)      // 将请求交给 Handler 进行处理
 }
 
 // Handle registers the handler for the given pattern.
@@ -2792,13 +2796,16 @@ type serverHandler struct {
 }
 
 func (sh serverHandler) ServeHTTP(rw ResponseWriter, req *Request) {
+	// http.Server.Handler 字段指向的就是通过 Transport.Handler() 方法创建的 http.ServeMux 实例
 	handler := sh.srv.Handler
-	if handler == nil {
+	if handler == nil { // 如果 http.Server 未初始化 Handler 字段, 则使用默认的 ServeMux 实例
 		handler = DefaultServeMux
 	}
+	// 特殊的请求路径或请求方法, 会选择其他 Handler 进行处理
 	if req.RequestURI == "*" && req.Method == "OPTIONS" {
 		handler = globalOptionsHandler{}
 	}
+	// 调用 http.ServeMux.ServeHTTP() 方法进行处理
 	handler.ServeHTTP(rw, req)
 }
 
@@ -2893,6 +2900,7 @@ func (srv *Server) Serve(l net.Listener) error {
 
 	ctx := context.WithValue(baseCtx, ServerContextKey, srv)
 	for {
+		// 接收新连接 (net.Conn)
 		rw, e := l.Accept()
 		if e != nil {
 			select {
@@ -2923,9 +2931,9 @@ func (srv *Server) Serve(l net.Listener) error {
 			}
 		}
 		tempDelay = 0
-		c := srv.newConn(rw)
+		c := srv.newConn(rw)        // 将 net.Conn 封装成 http.Conn
 		c.setState(c.rwc, StateNew) // before Serve can return
-		go c.serve(connCtx)
+		go c.serve(connCtx)         // 启动单独的 goroutine 处理新连接
 	}
 }
 

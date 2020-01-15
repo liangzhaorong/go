@@ -93,8 +93,12 @@ const DefaultMaxIdleConnsPerHost = 2
 // request is treated as idempotent but the header is not sent on the
 // wire.
 type Transport struct {
-	idleMu       sync.Mutex
-	closeIdle    bool                                // user has requested to close all idle conns
+	idleMu    sync.Mutex
+	closeIdle bool // user has requested to close all idle conns
+	// persistConn 是在普通网络连接 (net.Conn) 上的一层封装, 一般表示的是 TCP 长连接 (即在建立
+	// 连接并传输数据之后, 不调用 close() 方法关闭连接, 后续可复用该 TCP 连接). http.Transport
+	// 的 idleConn 字段保存了从 connectMethodKey 到 persistConn 的映射, 其中的 connectMethodKey
+	// 记录了连接的协议、host 等信息.
 	idleConn     map[connectMethodKey][]*persistConn // most recently used at end
 	idleConnWait map[connectMethodKey]wantConnQueue  // waiting getConns
 	idleLRU      connLRU
@@ -466,6 +470,7 @@ func (t *Transport) roundTrip(req *Request) (*Response, error) {
 	}
 	scheme := req.URL.Scheme
 	isHTTP := scheme == "http" || scheme == "https"
+	// 对 HTTP 和 HTTPS 请求进行合法性检查
 	if isHTTP {
 		for k, vv := range req.Header {
 			if !httpguts.ValidHeaderFieldName(k) {
@@ -509,7 +514,7 @@ func (t *Transport) roundTrip(req *Request) (*Response, error) {
 
 		// treq gets modified by roundTrip, so we need to recreate for each retry.
 		treq := &transportRequest{Request: req, trace: trace}
-		cm, err := t.connectMethodForRequest(treq)
+		cm, err := t.connectMethodForRequest(treq) // 创建 connectMethod 实例
 		if err != nil {
 			req.closeBody()
 			return nil, err
@@ -519,7 +524,7 @@ func (t *Transport) roundTrip(req *Request) (*Response, error) {
 		// host (for http or https), the http proxy, or the http proxy
 		// pre-CONNECTed to https server. In any case, we'll be ready
 		// to send it requests.
-		pconn, err := t.getConn(treq, cm)
+		pconn, err := t.getConn(treq, cm) // 获取 TCP 连接
 		if err != nil {
 			t.setReqCanceler(req, nil)
 			req.closeBody()
@@ -532,12 +537,13 @@ func (t *Transport) roundTrip(req *Request) (*Response, error) {
 			t.setReqCanceler(req, nil) // not cancelable with CancelRequest
 			resp, err = pconn.alt.RoundTrip(req)
 		} else {
-			resp, err = pconn.roundTrip(treq)
+			resp, err = pconn.roundTrip(treq) // 发送请求, 并获取响应
 		}
 		if err == nil {
 			return resp, nil
 		}
 
+		// 如果发送失败, 会进行重试
 		// Failed. Clean up and determine whether to retry.
 
 		_, isH2DialError := pconn.alt.(http2erringRoundTripper)
@@ -1699,16 +1705,19 @@ type persistConn struct {
 	// If it's non-nil, the rest of the fields are unused.
 	alt RoundTripper
 
-	t         *Transport
-	cacheKey  connectMethodKey
-	conn      net.Conn
-	tlsState  *tls.ConnectionState
-	br        *bufio.Reader       // from conn
-	bw        *bufio.Writer       // to conn
-	nwrite    int64               // bytes written
-	reqch     chan requestAndChan // written by roundTrip; read by readLoop
-	writech   chan writeRequest   // written by roundTrip; read by writeLoop
-	closech   chan struct{}       // closed when conn closed
+	t        *Transport // 当前 persistConn 实例关联的 Transport 实例
+	cacheKey connectMethodKey
+	conn     net.Conn // 底层封装的连接
+	tlsState *tls.ConnectionState
+	br       *bufio.Reader // from conn -- 它对底层连接的输入流的封装
+	bw       *bufio.Writer // to conn - 它对底层连接的输出流的封装
+	nwrite   int64         // bytes written
+	// 主 goroutine 向 reqch 通道写入待读取的响应信息, readLoop 从该通道中接收这些信息
+	// 并在读取响应之后将其返回
+	reqch chan requestAndChan // written by roundTrip; read by readLoop
+	// 主 goroutine 会向 writech 通道写入待发送的请求, writeLoop 会从该通道读取待发送的请求
+	writech   chan writeRequest // written by roundTrip; read by writeLoop
+	closech   chan struct{}     // closed when conn closed
 	isProxy   bool
 	sawEOF    bool  // whether we've seen EOF from conn; owned by readLoop
 	readLimit int64 // bytes allowed to be read; owned by readLoop
@@ -1903,7 +1912,7 @@ func (pc *persistConn) readLoop() {
 	alive := true
 	for alive {
 		pc.readLimit = pc.maxHeaderResponseSize()
-		_, err := pc.br.Peek(1)
+		_, err := pc.br.Peek(1) // 检测当前是否发生了 I/O 异常
 
 		pc.mu.Lock()
 		if pc.numExpectedResponses == 0 {
@@ -1913,12 +1922,12 @@ func (pc *persistConn) readLoop() {
 		}
 		pc.mu.Unlock()
 
-		rc := <-pc.reqch
+		rc := <-pc.reqch // 从 reqch 通道中读取 requestAndChan 实例
 		trace := httptrace.ContextClientTrace(rc.req.Context())
 
 		var resp *Response
 		if err == nil {
-			resp, err = pc.readResponse(rc, trace)
+			resp, err = pc.readResponse(rc, trace) // 根据 requestAndChan 读取相应的响应
 		} else {
 			err = transportReadFromServerError{err}
 			closeErr = err
@@ -1949,7 +1958,7 @@ func (pc *persistConn) readLoop() {
 			// Don't do keep-alive on error if either party requested a close
 			// or we get an unexpected informational (1xx) response.
 			// StatusCode 100 is already handled above.
-			alive = false
+			alive = false // 根据请求和响应的信息, 决定 readLoop 是否继续执行
 		}
 
 		if !hasBody || bodyWritable {
@@ -1971,6 +1980,7 @@ func (pc *persistConn) readLoop() {
 			}
 
 			select {
+			// 将响应封装成 responseAndError 实例, 并将其写入 requestAndChan.ch 通道
 			case rc.ch <- responseAndError{res: resp}:
 			case <-rc.callerGone:
 				return
@@ -2344,8 +2354,9 @@ var (
 
 func (pc *persistConn) roundTrip(req *transportRequest) (resp *Response, err error) {
 	testHookEnterRoundTrip()
+	// 检测请求是否已被取消
 	if !pc.t.replaceReqCanceler(req.Request, pc.cancelRequest) {
-		pc.t.putOrCloseIdleConn(pc)
+		pc.t.putOrCloseIdleConn(pc) // 尝试将长连接放入 idleConn 等待复用, 若尝试失败, 则关闭连接
 		return nil, errRequestCanceled
 	}
 	pc.mu.Lock()
@@ -2407,12 +2418,13 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *Response, err err
 	// request body.
 	startBytesWritten := pc.nwrite
 	writeErrCh := make(chan error, 1)
+	// 创建 writeRequest 实例, 并写入到 writech 通道中
 	pc.writech <- writeRequest{req, writeErrCh, continueCh}
 
-	resc := make(chan responseAndError)
-	pc.reqch <- requestAndChan{
-		req:        req.Request,
-		ch:         resc,
+	resc := make(chan responseAndError) // 该通道用来接收 readLoop 中读取到的响应信息
+	pc.reqch <- requestAndChan{         // 创建 requestAndChan 实例并写到 reqch 通道中
+		req:        req.Request, // 封装了等待响应的请求
+		ch:         resc,        // readLoop 通过该通道返回相应的响应
 		addedGzip:  requestedGzip,
 		continueCh: continueCh,
 		callerGone: gone,
@@ -2452,6 +2464,7 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *Response, err err
 			pc.close(errTimeout)
 			return nil, errTimeout
 		case re := <-resc:
+			// 收到正常响应后, 先检测有没有异常, 如果没有, 则返回响应
 			if (re.res == nil) == (re.err == nil) {
 				panic(fmt.Sprintf("internal error: exactly one of res or err should be set; nil=%v", re.res == nil))
 			}
