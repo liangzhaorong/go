@@ -2255,12 +2255,17 @@ func gcstopm() {
 // Write barriers are allowed because this is called immediately after
 // acquiring a P in several places.
 //
+// 在当前 M 上调度 gp.
+// 如果 inheritTime 为 true, 则 gp 继承剩余的时间片. 否则从一个新的时间片开始. 永不返回.
+//
 //go:yeswritebarrierrec
 func execute(gp *g, inheritTime bool) {
 	_g_ := getg()
 
+	// 将 G 正式切换为 _Grunning 状态
 	casgstatus(gp, _Grunnable, _Grunning)
 	gp.waitsince = 0
+	// 抢占信号
 	gp.preempt = false
 	gp.stackguard0 = gp.stack.lo + _StackGuard
 	if !inheritTime {
@@ -2270,6 +2275,7 @@ func execute(gp *g, inheritTime bool) {
 	gp.m = _g_.m
 
 	// Check whether the profiler needs to be turned on or off.
+	// 检测是否需要打开或关闭 profiler
 	hz := sched.profilehz
 	if _g_.m.profilehz != hz {
 		setThreadCPUProfiler(hz)
@@ -2284,6 +2290,7 @@ func execute(gp *g, inheritTime bool) {
 		traceGoStart()
 	}
 
+	// 真正开始执行
 	gogo(&gp.sched)
 }
 
@@ -2593,6 +2600,7 @@ func injectglist(glist *gList) {
 
 // One round of scheduler: find a runnable goroutine and execute it.
 // Never returns.
+// 调度器执行一轮: 找到 runnable goroutine 并进行执行且永不返回.
 func schedule() {
 	_g_ := getg()
 
@@ -2600,9 +2608,10 @@ func schedule() {
 		throw("schedule: holding locks")
 	}
 
+	// m.lockedg 会在 LockOSThread 下变为非零
 	if _g_.m.lockedg != 0 {
 		stoplockedm()
-		execute(_g_.m.lockedg.ptr(), false) // Never returns.
+		execute(_g_.m.lockedg.ptr(), false) // Never returns. -- 用不返回
 	}
 
 	// We should not schedule away from a g that is executing a cgo call,
@@ -2613,6 +2622,7 @@ func schedule() {
 
 top:
 	if sched.gcwaiting != 0 {
+		// 如果需要 GC, 不再进行调度
 		gcstopm()
 		goto top
 	}
@@ -2635,34 +2645,49 @@ top:
 			tryWakeP = true
 		}
 	}
+	// 正在进行 GC, 去找 GC 的 G
 	if gp == nil && gcBlackenEnabled != 0 {
 		gp = gcController.findRunnableGCWorker(_g_.m.p.ptr())
 		tryWakeP = tryWakeP || gp != nil
 	}
-	if gp == nil {
+	if gp == nil { // 说明不在 GC
 		// Check the global runnable queue once in a while to ensure fairness.
 		// Otherwise two goroutines can completely occupy the local runqueue
 		// by constantly respawning each other.
+		// 每调度 61 次, 就检查一次全局队列, 保证公平性
+		// 否则两个 goroutine 可以通过互相 respawn 一直占领本地的 runqueue
 		if _g_.m.p.ptr().schedtick%61 == 0 && sched.runqsize > 0 {
 			lock(&sched.lock)
+			// 从全局队列中偷取 G
 			gp = globrunqget(_g_.m.p.ptr(), 1)
 			unlock(&sched.lock)
 		}
 	}
 	if gp == nil {
+		// 说明不在 GC
+		// 两种情况:
+		// 1. 普通取
+		// 2. 全局队列偷不到的取
+		// 从本地队列中取
 		gp, inheritTime = runqget(_g_.m.p.ptr())
 		if gp != nil && _g_.m.spinning {
 			throw("schedule: spinning with local work")
 		}
 	}
 	if gp == nil {
+		// 如果偷不到, 则休眠, 在此阻塞
 		gp, inheritTime = findrunnable() // blocks until work is available
 	}
+
+	// 这时候一定取到 G 了
 
 	// This thread is going to run a goroutine and is not spinning anymore,
 	// so if it was marked as spinning we need to reset it now and potentially
 	// start a new spinning M.
 	if _g_.m.spinning {
+		// 如果 M 是自旋状态, 则
+		// 1. 从自旋到非自旋
+		// 2. 在没有自旋状态的 M 的情况下, 再多创建一个新的自旋状态的 M
 		resetspinning()
 	}
 
@@ -2693,10 +2718,13 @@ top:
 	if gp.lockedm != 0 {
 		// Hands off own p to the locked m,
 		// then blocks waiting for a new p.
+		// 如果 G 需要 lock 到 M 上, 则会将当前的 P 给这个要 lock 的 G,
+		// 然后阻塞等待一个新的 P
 		startlockedm(gp)
 		goto top
 	}
 
+	// 开始执行
 	execute(gp, inheritTime)
 }
 
