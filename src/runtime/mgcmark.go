@@ -153,37 +153,43 @@ func markroot(gcw *gcWork, i uint32) {
 
 	// Note: if you add a case here, please also update heapdump.go:dumproots.
 	switch {
+	// 释放 mcache 中的 span
 	case baseFlushCache <= i && i < baseData:
 		flushmcache(int(i - baseFlushCache))
 
+	// 扫描可读写的全局变量
 	case baseData <= i && i < baseBSS:
 		for _, datap := range activeModules() {
 			markrootBlock(datap.data, datap.edata-datap.data, datap.gcdatamask.bytedata, gcw, int(i-baseData))
 		}
 
+	// 扫描只读的全局队列
 	case baseBSS <= i && i < baseSpans:
 		for _, datap := range activeModules() {
 			markrootBlock(datap.bss, datap.ebss-datap.bss, datap.gcbssmask.bytedata, gcw, int(i-baseBSS))
 		}
 
+	// 扫描 Finalizer 队列
 	case i == fixedRootFinalizers:
 		for fb := allfin; fb != nil; fb = fb.alllink {
 			cnt := uintptr(atomic.Load(&fb.cnt))
 			scanblock(uintptr(unsafe.Pointer(&fb.fin[0])), cnt*unsafe.Sizeof(fb.fin[0]), &finptrmask[0], gcw, nil)
 		}
 
+	// 释放已经终止的 stack
 	case i == fixedRootFreeGStacks:
 		// Switch to the system stack so we can call
 		// stackfree.
 		systemstack(markrootFreeGStacks)
 
+	// 扫描 MSpan.specials
 	case baseSpans <= i && i < baseStacks:
 		// mark mspan.specials
 		markrootSpans(gcw, int(i-baseSpans))
 
 	default:
 		// the rest is scanning goroutine stacks
-		var gp *g
+		var gp *g // 获取需要扫描的 G
 		if baseStacks <= i && i < end {
 			gp = allgs[i-baseStacks]
 		} else {
@@ -199,6 +205,7 @@ func markroot(gcw *gcWork, i uint32) {
 
 		// scang must be done on the system stack in case
 		// we're trying to scan our own stack.
+		// 转交给 g0 进行扫描
 		systemstack(func() {
 			// If this is a self-scan, put the user G in
 			// _Gwaiting to prevent self-deadlock. It may
@@ -206,6 +213,7 @@ func markroot(gcw *gcWork, i uint32) {
 			// worker or we're in mark termination.
 			userG := getg().m.curg
 			selfScan := gp == userG && readgstatus(userG) == _Grunning
+			// 如果是扫描自己的，则转换自己的 g 的状态
 			if selfScan {
 				casgstatus(userG, _Grunning, _Gwaiting)
 				userG.waitreason = waitReasonGarbageCollectionScan
@@ -218,7 +226,7 @@ func markroot(gcw *gcWork, i uint32) {
 			// we scan the stacks we can and ask running
 			// goroutines to scan themselves; and the
 			// second blocks.
-			scang(gp, gcw)
+			scang(gp, gcw) // 扫描 g 的栈
 
 			if selfScan {
 				casgstatus(userG, _Gwaiting, _Grunning)
@@ -880,20 +888,27 @@ const (
 // scan work.
 //
 //go:nowritebarrier
+// 三色标记的主要实现
+// gcDrain 扫描所有的 roots 和对象, 并标记为黑灰白对象, 直到所有的 roots 和对象都被标记
 func gcDrain(gcw *gcWork, flags gcDrainFlags) {
 	if !writeBarrier.needed {
 		throw("gcDrain phase incorrect")
 	}
 
 	gp := getg().m.curg
+	// 看到抢占标记是否要返回
 	preemptible := flags&gcDrainUntilPreempt != 0
+	// 是否计算后台的扫描量来减少辅助 GC 和唤醒等待中的 G
 	flushBgCredit := flags&gcDrainFlushBgCredit != 0
+	// 是否在空闲的时候执行标记任务
 	idle := flags&gcDrainIdle != 0
 
+	// 记录初始的已经执行过的扫描任务
 	initScanWork := gcw.scanWork
 
 	// checkWork is the scan work before performing the next
 	// self-preempt check.
+	// 设置对应模式的工作检查函数
 	checkWork := int64(1<<63 - 1)
 	var check func() bool
 	if flags&(gcDrainIdle|gcDrainFractional) != 0 {
@@ -906,12 +921,14 @@ func gcDrain(gcw *gcWork, flags gcDrainFlags) {
 	}
 
 	// Drain root marking jobs.
+	// 如果 root 对象没有扫描完, 则扫描
 	if work.markrootNext < work.markrootJobs {
 		for !(preemptible && gp.preempt) {
 			job := atomic.Xadd(&work.markrootNext, +1) - 1
 			if job >= work.markrootJobs {
 				break
 			}
+			// 执行 root 扫描任务
 			markroot(gcw, job)
 			if check != nil && check() {
 				goto done
@@ -920,6 +937,7 @@ func gcDrain(gcw *gcWork, flags gcDrainFlags) {
 	}
 
 	// Drain heap marking jobs.
+	// 循环直到被抢占
 	for !(preemptible && gp.preempt) {
 		// Try to keep work available on the global queue. We used to
 		// check if there were waiting workers, but it's better to
@@ -927,6 +945,7 @@ func gcDrain(gcw *gcWork, flags gcDrainFlags) {
 		// worst case, we'll do O(log(_WorkbufSize)) unnecessary
 		// balances.
 		if work.full == 0 {
+			// 平衡工作, 如果全局的标记队列为空, 则分一部分工作到全局队列中
 			gcw.balance()
 		}
 
@@ -941,15 +960,17 @@ func gcDrain(gcw *gcWork, flags gcDrainFlags) {
 				b = gcw.tryGet()
 			}
 		}
-		if b == 0 {
+		if b == 0 { // 获取任务失败, 跳出循环
 			// Unable to get work.
 			break
 		}
+		// 扫描获取的到对象
 		scanobject(b, gcw)
 
 		// Flush background scan work credit to the global
 		// account if we've accumulated enough locally so
 		// mutator assists can draw on it.
+		// 如果当前扫描的数量超过了 gcCreditSlack, 就把扫描的对象数量加到全局的数量, 批量更新
 		if gcw.scanWork >= gcCreditSlack {
 			atomic.Xaddint64(&gcController.scanWork, gcw.scanWork)
 			if flushBgCredit {
@@ -959,6 +980,8 @@ func gcDrain(gcw *gcWork, flags gcDrainFlags) {
 			checkWork -= gcw.scanWork
 			gcw.scanWork = 0
 
+			// 如果扫描的对象数量已经达到了 执行下次抢占的目标数量 checkWork, 则调用对应模式的函数.
+			// idle 模式为 pollWork, Fractional 模式为 pollFractionalWorkerExit
 			if checkWork <= 0 {
 				checkWork += drainCheckThreshold
 				if check != nil && check() {
@@ -971,6 +994,7 @@ func gcDrain(gcw *gcWork, flags gcDrainFlags) {
 done:
 	// Flush remaining scan work credit.
 	if gcw.scanWork > 0 {
+		// 把扫描的对象数量添加到全局
 		atomic.Xaddint64(&gcController.scanWork, gcw.scanWork)
 		if flushBgCredit {
 			gcFlushBgCredit(gcw.scanWork - initScanWork)
