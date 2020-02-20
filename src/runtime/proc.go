@@ -87,7 +87,7 @@ var modinfo string
 //
 // 设计文档：https://golang.org/s/go11sched
 
-// 工作线程的 parking/unparking
+// 工作线程的 parking(暂止)/unparking(复始)
 // 我们需要在保持足够的运行 worker thread 来利用有效硬件并发资源, 和 park 运行过多的 worker thread
 // 来节约 CPU 能耗之间进行权衡. 这个权衡并不简单, 有以下两点原因:
 // 1. 调度器状态是有意分布的(具体而言, 是一个 per-P 的 work 队列), 因此在快速路径(fast path) 计算出
@@ -628,7 +628,7 @@ func schedinit() {
 	stackinit()
 	// 内存分配初始化
 	mallocinit()
-	// M 初始化
+	// M 初始化: 初始化 M 资源池 allm
 	mcommoninit(_g_.m)
 	cpuinit()       // must run before alginit
 	alginit()       // maps must not be used before this call
@@ -655,6 +655,7 @@ func schedinit() {
 	if n, ok := atoi32(gogetenv("GOMAXPROCS")); ok && n > 0 {
 		procs = n
 	}
+	// P 初始化: 初始化 P 资源池 allp
 	// 调整 P 的个数, 这里是新分配 procs 个 P.
 	// PS: 所有 P 都是从这里分配的
 	if procresize(procs) != nil {
@@ -698,6 +699,9 @@ func checkmcount() {
 	}
 }
 
+// M 其实就是 OS 线程, 它只有两个状态: 自旋、非自旋. 在调度去初始化阶段, 只有一个 M, 那就是 OS 线程,
+// 因此这里的 mcommoninit 仅仅只是将对 M 进行一个初步的初始化, 该初始化仅包含对 M 及用于处理 M 信号
+// 的 G 的相关运算操作, 未涉及工作线程的暂止(park)和复始(unpark).
 func mcommoninit(mp *m) {
 	_g_ := getg()
 
@@ -723,14 +727,13 @@ func mcommoninit(mp *m) {
 	}
 
 	mpreinit(mp)
-	if mp.gsignal != nil {
+	if mp.gsignal != nil { // 初始化 gsignal, 用于处理 m 上的信号
 		mp.gsignal.stackguard1 = mp.gsignal.stack.lo + _StackGuard
 	}
 
 	// Add to allm so garbage collector doesn't free g->m
 	// when it is just in a register or thread-local storage.
-	// 添加到 allm 中, 从而当它刚保存到寄存器或本地线程存储时 GC 不会释放 g.m
-	mp.alllink = allm
+	mp.alllink = allm // 添加到 allm 中, 从而当它刚保存到寄存器或本地线程存储时 GC 不会释放 g.m
 
 	// NumCgoCall() iterates over allm w/o schedlock,
 	// so we need to publish it safely.
@@ -4214,14 +4217,11 @@ func procresize(nprocs int32) *p {
 	}
 	sched.procresizetime = now
 
-	// Grow allp if necessary.
 	// 必要时增加 allp
 	// 这个时候本质上是在检查用户代码是否有调度过 runtime.MAXGOPROCS 调整 P 的数量
 	// 此处多一步检查是为了避免内部的锁, 如果 nprocs 明显小于 allp 的可见数量,
 	// 则不需要进行加锁
 	if nprocs > int32(len(allp)) {
-		// Synchronize with retake, which could be running
-		// concurrently since it doesn't run on a P.
 		// 此处与 retake 同步, 它可以同时运行, 因为它不会在 P 上运行
 		lock(&allpLock)
 		if nprocs <= int32(cap(allp)) {
@@ -4230,8 +4230,6 @@ func procresize(nprocs int32) *p {
 		} else {
 			// 否则(调大了)创建更多的 P
 			nallp := make([]*p, nprocs)
-			// Copy everything up to allp's cap so we
-			// never lose old allocated Ps.
 			// 将原有的 P 复制到新创建的 nallp 中
 			copy(nallp, allp[:cap(allp)])
 			allp = nallp
@@ -4239,7 +4237,6 @@ func procresize(nprocs int32) *p {
 		unlock(&allpLock)
 	}
 
-	// initialize new P's
 	// 初始化新的 P
 	for i := old; i < nprocs; i++ {
 		pp := allp[i]
@@ -4255,7 +4252,6 @@ func procresize(nprocs int32) *p {
 	// 如果当前正在使用的 P 应该被释放, 则更换为 allp[0],
 	// 否则是初始化阶段, 没有 P 绑定当前 P allp[0]
 	if _g_.m.p != 0 && _g_.m.p.ptr().id < nprocs {
-		// continue to use the current P
 		// 继续使用当前 P
 		_g_.m.p.ptr().status = _Prunning
 		_g_.m.p.ptr().mcache.prepareForSweep()
@@ -4288,17 +4284,15 @@ func procresize(nprocs int32) *p {
 		}
 	}
 
-	// release resources from unused P's
 	// 将从未使用的 P 释放资源
 	for i := nprocs; i < old; i++ {
 		p := allp[i]
 		p.destroy()
-		// can't free P itself because it can be referenced by an M in syscall
 		// 不能释放 P 本身, 因为它可能在 M 进入系统调用时被引用
 	}
 
 	// Trim allp.
-	// 清理完毕后, 修建 allp, 清除 nprocs 个数之外的所有 P
+	// 清理完毕后, 修剪 allp, 清除 nprocs 个数之外的所有 P
 	if int32(len(allp)) != nprocs {
 		lock(&allpLock)
 		allp = allp[:nprocs]
@@ -4308,7 +4302,7 @@ func procresize(nprocs int32) *p {
 	// 将没有本地任务的 P 放到空闲链表中
 	var runnablePs *p
 	for i := nprocs - 1; i >= 0; i-- {
-		// 挨个检查
+		// 挨个检查 P
 		p := allp[i]
 		// 确保不是当前正在使用的 P
 		if _g_.m.p.ptr() == p {
